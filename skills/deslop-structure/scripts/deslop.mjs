@@ -3,8 +3,9 @@
 // Three jobs: call the Slop API, choose the next step of a run, render report.html from run.json.
 // Usage: node deslop.mjs <command> [options]. Run `node deslop.mjs help` for the commands.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const DEFAULT_GOAL = 0.2
 const API_DEFAULT_TARGET = 0.3
@@ -84,7 +85,10 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
   const base = run.current
   if (base == null) throw new Error('Check the original post first.')
   if (!existsSync(join(runDir, 'versions', `v${base}.md`))) throw new Error('The run has no text of the post yet. Save it with the `original` command.')
-  const chosen = checkOf(runDir, base).paths?.[path - 1]
+  if (run.rounds.length >= run.settings.max_rounds) throw new Error(`The round limit of ${run.settings.max_rounds} is reached. Run \`extend\` first if the user allows more rounds.`)
+  if (run.rounds.some((r) => r.base === base && r.path_number === path)) throw new Error(`Path ${path} was already tried from version ${base}. Choose another Path.`)
+  const check = checkOf(runDir, base)
+  const chosen = check.paths?.[path - 1]
   if (!chosen) throw new Error(`Version ${base} has no Path ${path}.`)
   const n = run.rounds.length + 1
   run.rounds.push({ n, base, path_number: path, path: chosen, chosen_by: chosenBy, stage: 'rewriting', author_input: [], fidelity: null })
@@ -94,7 +98,7 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
     rewrite_from: join(runDir, 'versions', `v${base}.md`),
     write_to: join(runDir, 'versions', `v${n}.md`),
     moves: chosen.changes.map(({ feature, edit, what_it_measures, from, to, instruction }) => ({ feature, edit, what_it_measures, from, to, instruction })),
-    keep: (checkOf(runDir, base).keep ?? []).map(({ what_it_measures, value }) => ({ what_it_measures, value })),
+    keep: (check.keep ?? []).map(({ what_it_measures, value }) => ({ what_it_measures, value })),
   }
 }
 
@@ -102,7 +106,7 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
 export function recordFidelity(runDir, { passed, summary = '' }) {
   const run = readRun(runDir)
   const round = lastRound(run)
-  if (!round || round.stage !== 'rewriting') throw new Error('No Round is waiting for a meaning check.')
+  if (!round || round.stage !== 'rewriting') throw new Error('No Round is waiting for a fidelity check.')
   round.fidelity = { passed, summary }
   if (passed) {
     round.stage = 'checking'
@@ -132,39 +136,45 @@ function openCandidates(runDir, run) {
   return [...open.filter((c) => !c.conflict), ...open.filter((c) => c.conflict)]
 }
 
-/** The manager rules: what the run does after the current version's Check, or after a revert. */
+/** The manager rules: what the run does after the current version's Check, or after a revert. Each message is one sentence. */
 function decide(runDir, run, { reverted = false } = {}) {
   const body = checkOf(runDir, run.current)
   const goal = effectiveGoal(run, body)
-  const now = `P(AI) is ${pct(body.p_ai)}`
+  const now = `${reverted ? 'The last round was undone, and ' : ''}P(AI) is ${pct(body.p_ai)}`
   const base = { goal, reverted }
-  if (body.p_ai < goal) return { ...base, action: 'stop', reason: 'goal_reached', message: `${now}, under the goal of ${pct(goal)}. The run is done.` }
-  if (run.settings.score_only) return { ...base, action: 'stop', reason: 'score_only', message: `${now}. Score only: nothing was rewritten.` }
+  if (body.p_ai < goal) {
+    const fallback = goal === run.settings.goal ? '' : ` (the API plans to ${pct(API_DEFAULT_TARGET)} until it accepts your goal of ${pct(run.settings.goal)})`
+    return { ...base, action: 'stop', reason: 'goal_reached', message: `${now}, under the goal of ${pct(goal)}${fallback}, so the run is done.` }
+  }
+  if (run.settings.score_only) return { ...base, action: 'stop', reason: 'score_only', message: `${now}, and the run stops here because you asked only for the Check.` }
   const all = openCandidates(runDir, run)
-  const candidates = all.filter((c) => !c.conflict)
-  const listed = { candidates: all.map(describe), recommended: candidates[0] ? describe(candidates[0]) : null }
+  const usable = all.filter((c) => !c.conflict)
+  const reaching = usable.filter((c) => reaches(c.path))
+  const listed = { candidates: all.map(describe), recommended: usable[0] ? describe(usable[0]) : null }
+  const stop = { id: 'stop', label: 'Stop and keep the best version' }
   if (run.rounds.length >= run.settings.max_rounds) {
-    const reaching = candidates.some((c) => reaches(c.path))
-    if (reaching && run.settings.interactive) {
-      return { ...base, ...listed, action: 'ask_user', reason: 'max_rounds', message: `${now} after ${run.rounds.length} rounds, the limit. A Path that reaches the goal is still offered.`,
-        options: [{ id: 'more', label: `Run one more round along the recommended Path (${listed.recommended.mix})`, recommended: true }, { id: 'stop', label: 'Stop and keep the best version' }] }
+    if (reaching.length && run.settings.interactive) {
+      return { ...base, ...listed, action: 'ask_user', reason: 'max_rounds', message: `${now} after ${run.rounds.length} rounds, the limit, and a Path that reaches the goal is still offered.`,
+        options: [{ id: 'more', label: `Run one more round along Path ${listed.recommended.path} (${listed.recommended.mix})`, recommended: true }, stop] }
     }
-    return { ...base, ...listed, action: 'stop', reason: 'max_rounds', message: `${now} after ${run.rounds.length} rounds, the limit. ${reaching ? 'The run cannot ask you for more rounds.' : 'No Path that reaches the goal is left.'}` }
+    return { ...base, ...listed, action: 'stop', reason: 'max_rounds', message: `${now} after ${run.rounds.length} rounds, the limit, so the run stops.` }
   }
-  if (candidates.length === 0) {
-    if (!run.settings.interactive) return { ...base, ...listed, action: 'stop', reason: 'no_path_left', message: `${now}, above the goal of ${pct(goal)}, and no Path is left.` }
-    return { ...base, ...listed, action: 'ask_user', reason: 'no_path_left', message: `${now}, above the goal of ${pct(goal)}, and the API offers no Path that has not been tried.`,
-      options: [{ id: 'stop', label: 'Stop and keep the best version', recommended: true }] }
+  if (usable.length === 0) {
+    if (!run.settings.interactive) return { ...base, ...listed, action: 'stop', reason: 'no_path_left', message: `${now}, above the goal of ${pct(goal)}, and no untried Path is left, so the run stops.` }
+    return { ...base, ...listed, action: 'ask_user', reason: 'no_path_left', message: `${now}, above the goal of ${pct(goal)}, and no untried Path is left.`, options: [{ ...stop, recommended: true }] }
   }
-  const first = candidates[0]
-  const why = reaches(first.path) ? 'it reaches the goal' : 'no offered Path reaches the goal; this one comes closest'
+  if (reaching.length === 0) {
+    if (!run.settings.interactive) return { ...base, ...listed, action: 'stop', reason: 'no_path_reaches_target', message: `${now}, and no Path left reaches the goal of ${pct(goal)}, so the run stops.` }
+    return { ...base, ...listed, action: 'ask_user', reason: 'no_path_reaches_target', message: `${now}, and no Path left reaches the goal of ${pct(goal)}.`,
+      options: [{ ...stop, recommended: true }, { id: 'try', label: `Try Path ${listed.recommended.path} (${listed.recommended.mix}) anyway` }] }
+  }
   return { ...base, ...listed, action: confirmOrRewrite(run), reason: reverted ? 'reverted' : 'path_left',
-    message: `${reverted ? 'The last round was undone. ' : ''}${now}. Next: the Path "${first.path.mix}", because ${why} with the fewest structural Moves.` }
+    message: `${now}, and the next Path is "${usable[0].path.mix}" because it reaches the goal with the fewest structural Moves.` }
 }
 
 /** Writes the best version as <name>.deslopped.md: next to the input file, or in the run folder for a URL. */
 function writeOutput(runDir, run) {
-  if (!run.current) return null
+  if (run.current == null || run.current === 0) return null
   const folder = run.input.kind === 'file' ? dirname(run.input.source) : runDir
   const output = join(folder, `${run.input.kind === 'file' ? basename(run.input.source, extname(run.input.source)) : run.input.name}.deslopped.md`)
   if (resolve(output) === resolve(run.input.source)) throw new Error('The output would overwrite the input.')
@@ -185,9 +195,17 @@ function logDecision(runDir, run, decision) {
   return { decision, run, report: join(runDir, 'report.html'), output: run.output ?? null }
 }
 
+/** The run log of a run that is active and has a checked version. */
+function activeRun(runDir) {
+  const run = readRun(runDir)
+  if (run.status !== 'active') throw new Error('The run is finished.')
+  if (run.current == null) throw new Error('Check the original post first.')
+  return run
+}
+
 /** Marks Path number `path` of the current version as breaking a known Constraint, then decides again. */
 export function markConflict(runDir, { path, reason }) {
-  const run = readRun(runDir)
+  const run = activeRun(runDir)
   if (!reason) throw new Error('Give the reason of the conflict.')
   run.conflicts = run.conflicts ?? {}
   run.conflicts[run.current] = { ...run.conflicts[run.current], [path]: reason }
@@ -196,7 +214,7 @@ export function markConflict(runDir, { path, reason }) {
 
 /** Raises the round limit after the user allows more rounds, then decides again. */
 export function extendRounds(runDir, { rounds = 1 } = {}) {
-  const run = readRun(runDir)
+  const run = activeRun(runDir)
   run.settings.max_rounds += rounds
   return logDecision(runDir, run, decide(runDir, run))
 }
@@ -204,12 +222,14 @@ export function extendRounds(runDir, { rounds = 1 } = {}) {
 /** Stops the run on the user's word and writes the output. */
 export function stopRun(runDir, { reason = 'You stopped the run.' } = {}) {
   const run = readRun(runDir)
+  if (run.status !== 'active') throw new Error('The run is finished.')
   return logDecision(runDir, run, { action: 'stop', reason: 'user_stopped', message: reason })
 }
 
 /** Saves the text of the post for a URL run: the post as the skill fetched it. */
 export function setOriginal(runDir, { file }) {
   const run = readRun(runDir)
+  if (!file || file === true || !existsSync(file)) throw new Error('Give the file with the post text: --file <path>.')
   if (run.rounds.length) throw new Error('The original can change only before round 1.')
   copyFileSync(file, join(runDir, 'versions', 'v0.md'))
   writeRun(runDir, run)
@@ -253,13 +273,13 @@ export function status(runDir) {
 
 // ---------------------------------------------------------------- the API call
 
-/** The version a Check is waiting for: the original, or the Round whose meaning check passed. */
+/** The version a Check is waiting for: the original, or the Round whose fidelity check passed. */
 function pendingVersion(run) {
   if (run.status !== 'active') throw new Error('The run is finished.')
   const round = lastRound(run)
   if (run.versions.length === 0) return 0
   if (round?.stage === 'checking') return round.n
-  if (round?.stage === 'rewriting') throw new Error(`Record the meaning check of round ${round.n} first.`)
+  if (round?.stage === 'rewriting') throw new Error(`Record the fidelity check of round ${round.n} first.`)
   throw new Error('No version is waiting for a Check.')
 }
 
@@ -285,7 +305,9 @@ export async function check(runDir, { env = process.env, fetchImpl = fetch, now 
     } catch {
       body = { error: { code: res.ok ? 'internal' : res.status === 404 ? 'not_found' : 'internal', retry_after: null } }
     }
-    response = { status: res.ok && !body.error ? 200 : res.status || 500, body, headers: { 'retry-after': res.headers.get('retry-after') } }
+    const isCheck = res.ok && typeof body?.p_ai === 'number' && typeof body?.band === 'string'
+    if (res.ok && !isCheck) body = { error: { code: 'internal', retry_after: null } }
+    response = { status: isCheck ? 200 : res.ok ? 500 : res.status, body, headers: { 'retry-after': res.headers.get('retry-after') } }
   } catch (error) {
     response = { status: 0, body: { error: { code: 'network', retry_after: null, detail: String(error.message ?? error) } } }
   }
@@ -302,9 +324,9 @@ const ERROR_CAUSES = {
   paste_too_long: 'The post has more than 20,000 characters.',
   paste_too_short: 'The post has fewer than 300 words.',
   rate_limited: 'The daily limit of 30 Checks per IP address, or the burst guard, refused the Check.',
-  budget_exhausted: 'The daily spend budget of the API is used up.',
+  budget_exhausted: 'The daily spend budget of the API is used up. It resets at 00:00 UTC.',
   provider_key_missing: 'A provider key is not set on the server.',
-  score_quota: 'The AI Gateway of the API has no credits.',
+  score_quota: 'The AI Gateway of the API has no credits. They reset at 00:00 UTC.',
   fetch_blocked: 'The API could not fetch the post from the URL.',
   fetch_not_html: 'The URL does not return an HTML page.',
   fetch_too_large: 'The page at the URL is too large.',
@@ -328,7 +350,8 @@ function retryText(seconds, now) {
   return ` Try again in ${seconds < 120 ? `${seconds} seconds` : `${Math.round(seconds / 60)} minutes`} (at ${at} UTC).`
 }
 
-function recordError(runDir, run, response, now) {
+function recordError(runDir, run, n, response, now) {
+  writeFileSync(join(runDir, 'checks', `v${n}-error.json`), `${JSON.stringify({ status: response.status, ...response.body }, null, 2)}\n`)
   const e = response.body?.error ?? { code: 'internal' }
   const retryAfter = e.retry_after ?? (Number(response.headers?.['retry-after']) || null)
   const error = { code: e.code, status: response.status, retry_after: retryAfter, request_id: e.request_id ?? null, at: now.toISOString() }
@@ -337,6 +360,8 @@ function recordError(runDir, run, response, now) {
       message: `The API could not fetch the post (${e.code}). Fetch it yourself, save it with the \`original\` command, and check again.` })
   }
   run.error = error
+  const round = lastRound(run)
+  if (round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
   const cause = ERROR_CAUSES[e.code] ?? 'The API refused the Check.'
   const ref = error.request_id ? ` Request id: ${error.request_id}.` : ''
   const said = e.code === 'network' ? `The Slop API could not be reached (${e.detail ?? 'no answer'}).` : `The Slop API answered ${e.code}: ${cause}`
@@ -349,7 +374,7 @@ export function recordCheck(runDir, response, { now = new Date() } = {}) {
   const run = readRun(runDir)
   const round = lastRound(run)
   const n = pendingVersion(run)
-  if (response.status !== 200) return recordError(runDir, run, response, now)
+  if (response.status !== 200) return recordError(runDir, run, n, response, now)
   const body = response.body
   writeFileSync(join(runDir, 'checks', `v${n}.json`), `${JSON.stringify(body, null, 2)}\n`)
   run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: body.target_p_ai ?? null, word_count: body.word_count, truncated: body.truncated, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
@@ -365,17 +390,19 @@ export function recordCheck(runDir, response, { now = new Date() } = {}) {
   return logDecision(runDir, run, decide(runDir, run, { reverted }))
 }
 
-// ---------------------------------------------------------------- the report (layout W of the prototype)
+// ---------------------------------------------------------------- the report: one self-contained page, stacked report with a timeline
 
 const BAND_NAME = { human_shaped: 'Human-shaped', borderline: 'Borderline', ai_shaped: 'AI-shaped' }
 const KIND_NAME = { local: 'local', structural: 'structural', needs_author_input: 'author input' }
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const readText = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null)
 
+/** The post's markdown heading, or the name of its file or URL. */
 function titleOf(runDir, run) {
-  const text = readText(join(runDir, 'versions', 'v0.md'))
-  const line = text?.split('\n').map((l) => l.trim()).find(Boolean)
-  return line ? line.replace(/^#+\s*/, '').slice(0, 140) : run.input.name
+  const text = readText(join(runDir, 'versions', 'v0.md')) ?? ''
+  const heading = text.split('\n').find((l) => /^#{1,2}\s+\S/.test(l))
+  if (heading) return heading.replace(/^#+\s*/, '').trim().slice(0, 140)
+  return run.input.kind === 'file' ? basename(run.input.source, extname(run.input.source)) : run.input.name
 }
 
 function chip(band, id) {
@@ -404,8 +431,10 @@ function lineChart({ id, label, points, rounds, y, ticks, zones = '', goal = nul
   return `<section class="card fig"><p class="eyebrow">${esc(label)}</p><div class="chart" id="${id}">${s}</svg></div></section>`
 }
 
+const revertedRounds = (run) => new Set(run.rounds.filter((r) => r.outcome === 'reverted').map((r) => r.n))
+
 function pChart(run, goal, rounds) {
-  const reverted = new Set(run.rounds.filter((r) => r.outcome === 'reverted').map((r) => r.n))
+  const reverted = revertedRounds(run)
   const points = run.versions.map((v) => ({ n: v.n, v: v.p_ai, band: v.band, reverted: reverted.has(v.n) }))
   const zones = (x1, x2, ys) => `<rect class="zone-a" x="${x1}" y="${ys(1)}" width="${x2 - x1}" height="${ys(0.7) - ys(1)}"/><rect class="zone-h" x="${x1}" y="${ys(0.3)}" width="${x2 - x1}" height="${ys(0) - ys(0.3)}"/>` +
     `<text class="zl" x="${x2 - 6}" y="${ys(1) + 14}" text-anchor="end">AI-SHAPED</text><text class="zl" x="${x2 - 6}" y="${ys(0) - 7}" text-anchor="end">HUMAN-SHAPED</text>`
@@ -413,7 +442,7 @@ function pChart(run, goal, rounds) {
 }
 
 function marginChart(run, rounds) {
-  const reverted = new Set(run.rounds.filter((r) => r.outcome === 'reverted').map((r) => r.n))
+  const reverted = revertedRounds(run)
   const points = run.versions.filter((v) => typeof v.margin === 'number').map((v) => ({ n: v.n, v: v.margin, band: v.band, reverted: reverted.has(v.n) }))
   if (points.length === 0) return ''
   const lo = Math.min(0, ...points.map((p) => p.v)), hi = Math.max(0, ...points.map((p) => p.v))
@@ -450,13 +479,14 @@ function roundItem(run, round) {
   const inputs = new Map(round.author_input.map((a) => [a.feature, a]))
   const stage = { rewriting: 'Rewriting', checking: 'Checking' }[round.stage]
   const node = stage ? 'pending pulse' : round.outcome === 'kept' ? esc(after.band) : 'undone'
-  const right = stage ? `<span class="chip pulse">${stage}…</span>` : after ? `<span class="tl-p num">${pct(after.p_ai)}</span>` : '<span class="chip">Undone</span>'
+  const right = stage ? `<span class="chip pulse">${stage}…</span>` : after ? `<span class="tl-p num">${pct(after.p_ai)}</span>` : `<span class="chip">${round.outcome === 'not_checked' ? 'Not checked' : 'Undone'}</span>`
   const outcome = {
     kept: after && `${pct(before.p_ai)} → ${pct(after.p_ai)}`,
     reverted: after && `${pct(before.p_ai)} → ${pct(after.p_ai)} · P(AI) went up, so this round was undone`,
-    meaning_changed: 'The meaning check failed, so this round was undone',
+    meaning_changed: 'The fidelity check failed, so this round was undone',
+    not_checked: 'Not checked: the run stopped on an API error',
   }[round.outcome]
-  const fidelity = round.fidelity ? `<p class="muted small">Meaning check: ${round.fidelity.passed ? 'passed' : 'failed'}${round.fidelity.summary ? ` · ${esc(round.fidelity.summary)}` : ''}</p>` : ''
+  const fidelity = round.fidelity ? `<p class="muted small">Fidelity check: ${round.fidelity.passed ? 'passed' : 'failed'}${round.fidelity.summary ? ` · ${esc(round.fidelity.summary)}` : ''}</p>` : ''
   return `<li class="tl-item" data-round="${round.n}"><div class="tl-rail"><span class="tl-node ${node}">${round.n}</span></div>
     <div class="tl-card"><div class="round-head"><h3>Round ${round.n} <span class="muted thin">· Path ${round.path_number} · ${esc(round.path.mix)}</span></h3>${right}</div>
     <p class="delta muted">${outcome ? `${outcome} · ` : ''}${round.chosen_by === 'auto' ? 'Path chosen by the skill' : 'Path confirmed by you'}</p>
@@ -493,14 +523,17 @@ function banners(run) {
     for (const w of v.warnings ?? []) if (!seen.has(w.code)) { seen.add(w.code); list.push(w.message) }
     if (v.truncated && !seen.has('truncated')) { seen.add('truncated'); list.push('The post is long: the API scored only its first 2,600 words. The rest of the post was not measured.') }
   }
-  if (run.error) list.push(`The run stopped on an API error: ${run.next?.message ?? run.error.code}`)
+  if (run.error) list.push(run.next?.message ?? `The Slop API answered ${run.error.code}.`)
   return list.length ? `<section class="banners" id="banners">${list.map((t) => `<p class="banner">${esc(t)}</p>`).join('')}</section>` : ''
 }
 
 function statusLine(run, goal) {
   const next = run.next
   const round = lastRound(run)
-  if (run.status === 'done') return next?.reason === 'goal_reached' ? `Done · the goal of under ${pct(goal)} is reached` : `Stopped · ${next?.message ?? ''}`
+  if (run.status === 'done') {
+    if (next?.reason === 'goal_reached') return `Done · the goal of under ${pct(goal)} is reached`
+    return run.error ? `Stopped · the Slop API answered ${run.error.code}` : `Stopped · ${next?.message ?? ''}`
+  }
   if (!run.versions.length) return 'Checking the original post'
   if (round?.stage === 'rewriting') return `Round ${round.n} of ${run.settings.max_rounds} · rewriting along Path ${round.path_number}`
   if (round?.stage === 'checking') return `Round ${round.n} of ${run.settings.max_rounds} · checking the rewrite`
@@ -541,21 +574,20 @@ export function renderReport(runDir, run) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deslop Run Report</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>${CSS}</style></head>
 <body><div class="wrap">
 <section class="card top"><div class="stack tight">
   <p class="eyebrow">Deslop run${words ? ` · ${words.toLocaleString('en')} words` : ''} · up to ${run.settings.max_rounds} rounds</p>
-  <h1>${esc(titleOf(runDir, run))}</h1><p class="muted small">${esc(source)}</p>
+  <h1 id="title">${esc(titleOf(runDir, run))}</h1><p class="muted small">${esc(source)}</p>
   <p id="status">${esc(statusLine(run, goal))}</p></div>
   <div class="stack tight">${readout}</div></section>
 ${banners(run)}
-${run.next?.message ? `<p class="manager" id="manager">${esc(run.next.message)}</p>` : ''}
+${run.next?.message && !run.error ? `<p class="manager" id="manager">${esc(run.next.message)}</p>` : ''}
 ${pChart(run, goal, rounds)}
 ${marginChart(run, rounds)}
 ${timeline(runDir, run)}
 ${keepList(runDir, run)}
-<footer class="stack tight">${tokenLine(run)}<p class="muted small">This skill is an experiment: a post the detector calls human may not read as less AI to people. Every version is kept in the run folder${latest?.bundle_version ? ` · bundle ${esc(latest.bundle_version)}` : ''}.</p></footer>
+<footer class="stack tight">${tokenLine(run)}<p class="muted small">This skill is an experiment: a post that the detector calls human can still read as AI-written to people. Every version is kept in the run folder${latest?.bundle_version ? ` · bundle ${esc(latest.bundle_version)}` : ''}.</p></footer>
 </div>
 <script>document.addEventListener('pointerover', (e) => { const el = e.target.closest('[data-round]'); const n = el ? el.dataset.round : null; document.querySelectorAll('[data-round]').forEach((x) => x.classList.toggle('hi', n != null && x.dataset.round === n)) })</script>
 ${live}</body></html>
@@ -565,7 +597,7 @@ ${live}</body></html>
 const CSS = `
 :root { --bg: #f4f3f1; --surface: #ffffff; --plate: #fbfaf9; --ink: #171717; --ink-2: #4f4d4a; --muted: #76736f; --line: rgba(23,23,23,.09); --line-strong: rgba(23,23,23,.18);
   --human: #e8532b; --human-soft: rgba(251,95,53,.11); --ai: #5d6e93; --ai-soft: rgba(103,120,155,.12); --mid: #8d8a85; --ring: rgba(23,23,23,.35);
-  --font-body: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --font-mono: ui-monospace, "SF Mono", Menlo, monospace; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #121211; --surface: #1b1b1a; --plate: #171716; --ink: #f1f0ee; --ink-2: #c4c1bc; --muted: #94918c;
   --line: rgba(241,240,238,.10); --line-strong: rgba(241,240,238,.22); --human: #ff7a55; --human-soft: rgba(255,122,85,.14); --ai: #93a3c8; --ai-soft: rgba(147,163,200,.14); --mid: #a3a09a; --ring: rgba(241,240,238,.45); color-scheme: dark; } }
 :root[data-theme="dark"] { --bg: #121211; --surface: #1b1b1a; --plate: #171716; --ink: #f1f0ee; --ink-2: #c4c1bc; --muted: #94918c;
@@ -704,7 +736,7 @@ async function main(argv) {
 /** The command-line view of a decision: what the agent needs, without the whole run log. */
 const compact = ({ decision, report, output }) => ({ decision, report, output })
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).then(
     (result) => console.log(result.help ?? JSON.stringify(result, null, 2)),
     (error) => { console.log(JSON.stringify({ error: error.message }, null, 2)); process.exitCode = 1 },

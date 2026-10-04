@@ -1,4 +1,4 @@
-# The claim ledger and the meaning check
+# The claim ledger and the fidelity check
 
 ## Part 1: the claim ledger
 
@@ -15,9 +15,9 @@ List every item of these kinds, one per line, with a short quote from the post:
 
 Done when: every sentence of the post that holds one of these items has its items in the ledger.
 
-## Part 2: the meaning check
+## Part 2: the fidelity check
 
-The meaning check is adversarial: its job is to find changed meaning. Run it in a subagent if your host has subagents. If it has none, run it as a separate prompt. Give it only these inputs and the prompt below:
+The fidelity check is adversarial: its job is to find changed meaning. Run it in a subagent if your host has subagents. If it has none, run it as a separate prompt. Give it only these inputs and the prompt below:
 
 - the original post (`versions/v0.md`)
 - the rewrite (`write_to` of this round)
@@ -27,7 +27,7 @@ The meaning check is adversarial: its job is to find changed meaning. Run it in 
 
 Write its answer to `fidelity/round-<n>.md` in the run folder.
 
-### Prompt for the meaning check
+### Prompt for the fidelity check
 
 > You compare a rewrite of a blog post with its original. Find every place where the rewrite changes the meaning. A structural change is allowed: a new order, a new opening or ending, a new voice, shorter text, a claim that is less strong than before. These changes are failures:
 >
@@ -41,4 +41,4 @@ Write its answer to `fidelity/round-<n>.md` in the run folder.
 ## After the check
 
 - `PASS`: record it with `deslop fidelity <run> --pass --summary "<kept> of <total> claims kept"`.
-- `FAIL`: correct the listed failures in the rewrite and run the check again, one time. If it fails again, record it with `deslop fidelity <run> --fail --summary "<the failures, short>"`.
+- `FAIL`: correct the listed failures in the rewrite and run the check again, one time. Keep the first answer as `fidelity/round-<n>-attempt-1.md`. If it fails again, record it with `deslop fidelity <run> --fail --summary "<the failures, short>"`.

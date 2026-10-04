@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
-import { check, init, markConflict, recordCheck, recordFidelity, startRound } from '../skills/deslop-structure/scripts/deslop.mjs'
+import { check, extendRounds, init, markConflict, recordCheck, recordFidelity, setOriginal, startRound } from '../skills/deslop-structure/scripts/deslop.mjs'
 
 const FIXTURES = new URL('./fixtures/', import.meta.url)
 const golden = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8'))
@@ -51,8 +51,8 @@ function afterRound(overrides) {
 /** Runs round 1 along the recommended Path and records the given Check of the rewrite. */
 function roundOne(runDir, body) {
   const first = recordCheck(runDir, ok({ ...golden('ai_shaped'), target_p_ai: 0.2, margin: 12.48 }))
-  startRound(runDir, { path: first.decision.recommended.path })
-  writeFileSync(join(runDir, 'versions', 'v1.md'), 'The rewrite.\n')
+  const { write_to } = startRound(runDir, { path: first.decision.recommended.path })
+  writeFileSync(write_to, 'The rewrite.\n')
   recordFidelity(runDir, { passed: true, summary: '9 of 9 claims kept' })
   return recordCheck(runDir, ok(body))
 }
@@ -93,8 +93,8 @@ function runRounds(rounds, last) {
   const { runDir } = newRun({ maxRounds: rounds })
   let result = recordCheck(runDir, ok({ ...golden('ai_shaped'), target_p_ai: 0.2, margin: 12.48 }))
   for (let n = 1; n <= rounds; n++) {
-    startRound(runDir, { path: result.decision.recommended.path })
-    writeFileSync(join(runDir, 'versions', `v${n}.md`), `Rewrite ${n}.\n`)
+    const { write_to } = startRound(runDir, { path: result.decision.recommended.path })
+    writeFileSync(write_to, `Rewrite ${n}.\n`)
     recordFidelity(runDir, { passed: true })
     result = recordCheck(runDir, ok(afterRound({ p_ai: 0.5 - n * 0.1, band: 'borderline', ...(n === rounds ? last : {}) })))
   }
@@ -262,4 +262,115 @@ test('check sends the version and the goal to SLOP_API_URL and records the answe
   } finally {
     server.close()
   }
+})
+
+// ---------------------------------------------------------------- more manager rules and guards
+
+test('a borderline post gets its one Path recommended', () => {
+  const { runDir } = newRun()
+  const { decision } = recordCheck(runDir, ok(golden('borderline')))
+  assert.equal(decision.action, 'confirm_path')
+  assert.equal(decision.recommended.mix, '1 local')
+})
+
+test('a human_shaped post under the goal stops at the first Check, and nothing is written', () => {
+  const { runDir } = newRun()
+  const { decision, output } = recordCheck(runDir, ok({ ...golden('human_shaped'), target_p_ai: 0.2, margin: -7.3 }))
+  assert.equal(decision.action, 'stop')
+  assert.equal(decision.reason, 'goal_reached')
+  assert.equal(output, null)
+})
+
+test('score only: the run stops after the first Check', () => {
+  const { runDir } = newRun({ scoreOnly: true })
+  const { decision } = recordCheck(runDir, ok(golden('ai_shaped')))
+  assert.equal(decision.action, 'stop')
+  assert.equal(decision.reason, 'score_only')
+})
+
+test('a failed fidelity check undoes the round and recommends the next Path of the same version', () => {
+  const { runDir } = newRun()
+  const first = recordCheck(runDir, ok(golden('ai_shaped')))
+  startRound(runDir, { path: first.decision.recommended.path })
+  const { decision, run } = recordFidelity(runDir, { passed: false, summary: 'A number changed.' })
+  assert.equal(decision.reverted, true)
+  assert.equal(decision.recommended.mix, '2 local + 1 author input')
+  assert.equal(run.current, 0)
+})
+
+test('only Paths that do not reach the target are left: the user is asked', () => {
+  const { runDir } = newRun()
+  const body = golden('ai_shaped')
+  const paths = body.paths.map((p) => ({ ...p, reaches_band: false }))
+  const { decision } = recordCheck(runDir, ok({ ...body, paths }))
+  assert.equal(decision.action, 'ask_user')
+  assert.equal(decision.reason, 'no_path_reaches_target')
+})
+
+test('only Paths that do not reach the target are left, non-interactive: the run stops', () => {
+  const { runDir } = newRun({ interactive: false })
+  const body = golden('ai_shaped')
+  const { decision } = recordCheck(runDir, ok({ ...body, paths: body.paths.map((p) => ({ ...p, reaches_band: false })) }))
+  assert.equal(decision.action, 'stop')
+})
+
+test('budget_exhausted without retry_after still says when to try again', () => {
+  const { runDir } = newRun()
+  const { decision } = recordCheck(runDir, failure(503, 'budget_exhausted'))
+  assert.match(decision.message, /00:00 UTC/)
+})
+
+test('an API error is saved in the run folder', () => {
+  const { runDir } = newRun()
+  recordCheck(runDir, failure(429, 'rate_limited', 60))
+  assert.equal(JSON.parse(readFileSync(join(runDir, 'checks', 'v0-error.json'), 'utf8')).error.code, 'rate_limited')
+})
+
+test('an API error on a rewrite: the report shows the round as not checked', () => {
+  const { runDir } = newRun()
+  const first = recordCheck(runDir, ok(golden('ai_shaped')))
+  const { write_to } = startRound(runDir, { path: first.decision.recommended.path })
+  writeFileSync(write_to, 'The rewrite.\n')
+  recordFidelity(runDir, { passed: true })
+  recordCheck(runDir, failure(502, 'score_failed'))
+  const html = report(runDir)
+  assert.doesNotMatch(textOf(html, 'timeline'), /Checking/)
+  assert.match(textOf(html, 'timeline'), /Not checked/)
+})
+
+test('the report title is the heading of the post, or its source when it has none', () => {
+  const { runDir } = newRun()
+  recordCheck(runDir, ok(golden('ai_shaped')))
+  assert.equal(textOf(report(runDir), 'title'), 'How to make asynchronous communication work')
+  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+  const url = init({ input: 'https://example.com/blog/async-work', runsDir: dir })
+  writeFileSync(join(dir, 'post.md'), 'Our Monday standup used to take 45 minutes, and half of the team joined late.\n')
+  recordCheck(url.runDir, ok(golden('ai_shaped')))
+  setOriginal(url.runDir, { file: join(dir, 'post.md') })
+  assert.equal(textOf(report(url.runDir), 'title'), 'async-work')
+})
+
+test('a round cannot start past the round limit, or on a Path already tried from the same version', () => {
+  const { runDir } = runRounds(1)
+  assert.throws(() => startRound(runDir, { path: 1 }), /limit/)
+  extendRounds(runDir, { rounds: 1 })
+  assert.doesNotThrow(() => startRound(runDir, { path: 1 }))
+  const fresh = newRun()
+  const first = recordCheck(fresh.runDir, ok(golden('ai_shaped')))
+  startRound(fresh.runDir, { path: 1 })
+  recordFidelity(fresh.runDir, { passed: false })
+  assert.throws(() => startRound(fresh.runDir, { path: 1 }), /tried/)
+  assert.ok(first)
+})
+
+test('a conflict before the first Check is refused with a clear error', () => {
+  const { runDir } = newRun()
+  assert.throws(() => markConflict(runDir, { path: 1, reason: 'x' }), /Check the original post first/)
+})
+
+test('an answer of 200 that is not a Check stops the run as an internal error', async () => {
+  const { runDir } = newRun()
+  const fetchImpl = async () => new Response('<html>Gateway</html>', { status: 200, headers: { 'content-type': 'text/html' } })
+  const { decision } = await check(runDir, { fetchImpl, env: {} })
+  assert.equal(decision.error.code, 'internal')
 })

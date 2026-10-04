@@ -9,7 +9,7 @@ You give the skill a blog post, as a URL or as a markdown or text file. The skil
 1. It checks the post with the Slop API and shows you P(AI), the probability that the post is AI-written.
 2. It recommends a Path: a set of structural changes that the API proposes. You confirm the Path, or you let the skill choose.
 3. It asks you for facts or links that only you can supply. You can skip each question.
-4. It rewrites the post along the Path. It keeps every number, name, claim and link of the original, and it makes sure of this with a separate meaning check.
+4. It rewrites the post along the Path. It keeps every number, name, claim and link of the original. A separate fidelity check compares the rewrite with the original and finds changed meaning.
 5. It checks the post again, and repeats until P(AI) is under the goal (0.2 by default) or you stop it.
 
 A report shows P(AI) and the detector's margin by round, and what each round changed. The skill never changes your file. It writes the result to `<name>.deslopped.md`, and it keeps every version in a run folder under `./deslop-runs/`.
@@ -34,7 +34,7 @@ Then ask your agent, for example: "Deslop my post at https://example.com/blog/my
 | a number of rounds | The round limit. Default 3. The skill asks before it goes past the limit. |
 | "choose the Paths yourself" | Auto path: no confirmation of each Path. |
 | "do not ask me questions" | Non-interactive mode. Paths that need your input are dropped. Interactive mode gives better results. |
-| "only score it" | The skill checks the post once and changes nothing. |
+| "only check it" | The skill checks the post once and changes nothing. |
 
 `SLOP_API_URL` sets the API base URL, for example `http://localhost:3000` for a local deployment. The default is `https://sitefire.ai`.
 
