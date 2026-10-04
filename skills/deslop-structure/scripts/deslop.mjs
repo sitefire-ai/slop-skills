@@ -89,7 +89,13 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
   const n = run.rounds.length + 1
   run.rounds.push({ n, base, path_number: path, path: chosen, chosen_by: chosenBy, stage: 'rewriting', author_input: [], fidelity: null })
   writeRun(runDir, run)
-  return { round: n, rewrite_from: join(runDir, 'versions', `v${base}.md`), write_to: join(runDir, 'versions', `v${n}.md`) }
+  return {
+    round: n,
+    rewrite_from: join(runDir, 'versions', `v${base}.md`),
+    write_to: join(runDir, 'versions', `v${n}.md`),
+    moves: chosen.changes.map(({ feature, edit, what_it_measures, from, to, instruction }) => ({ feature, edit, what_it_measures, from, to, instruction })),
+    keep: (checkOf(runDir, base).keep ?? []).map(({ what_it_measures, value }) => ({ what_it_measures, value })),
+  }
 }
 
 /** Records the Fidelity check of the Round being rewritten. */
