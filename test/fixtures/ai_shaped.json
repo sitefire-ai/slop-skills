@@ -1,0 +1,175 @@
+{
+  "token": "tok-ai_shaped",
+  "result_url": "https://sitefire.ai/api/slop/v1/check/tok-ai_shaped",
+  "bundle_version": "1.0.0",
+  "cached": false,
+  "p_ai": 0.9999950012197492,
+  "band": "ai_shaped",
+  "word_count": 357,
+  "truncated": false,
+  "language": "en",
+  "warnings": [],
+  "paths": [
+    {
+      "mix": "3 local",
+      "reaches_band": true,
+      "changes": [
+        {
+          "feature": "STR_STG_008",
+          "what_it_measures": "How the post ends: summary, action plan, sales ask, or no conclusion.",
+          "edit": "local",
+          "from_value": "restated_thesis_or_reframe",
+          "to_value": "new_substantive_point",
+          "from": "restated thesis or reframe",
+          "to": "new substantive point",
+          "instruction": "End on a new point the post has not made yet, instead of summarising or restating what came before."
+        },
+        {
+          "feature": "EVD_MTH_004",
+          "what_it_measures": "How strongly the post claims that something causes a result.",
+          "edit": "local",
+          "from_value": "strong causal claim",
+          "to_value": "qualified causal claim",
+          "from": "strong causal claim",
+          "to": "qualified causal claim",
+          "instruction": "Tone down claims about results: say an action can or often helps, not that it will or ensures it."
+        },
+        {
+          "feature": "EXP_KNW_002",
+          "what_it_measures": "How expert the post assumes its reader is.",
+          "edit": "local",
+          "from_value": "intermediate",
+          "to_value": "novice",
+          "from": "intermediate",
+          "to": "novice",
+          "instruction": "Write for beginners: explain basic concepts and define any specialist term when it first appears."
+        }
+      ]
+    },
+    {
+      "mix": "2 local + 1 author input",
+      "reaches_band": true,
+      "changes": [
+        {
+          "feature": "STR_STG_008",
+          "what_it_measures": "How the post ends: summary, action plan, sales ask, or no conclusion.",
+          "edit": "local",
+          "from_value": "restated_thesis_or_reframe",
+          "to_value": "new_substantive_point",
+          "from": "restated thesis or reframe",
+          "to": "new substantive point",
+          "instruction": "End on a new point the post has not made yet, instead of summarising or restating what came before."
+        },
+        {
+          "feature": "VOC_VOX_001",
+          "what_it_measures": "Who seems to be speaking: the company, an editor, a named expert, a founder.",
+          "edit": "needs_author_input",
+          "from_value": "editorial_explainer",
+          "to_value": "named_individual_expert",
+          "from": "editorial explainer",
+          "to": "named individual expert",
+          "instruction": "Write as a named person with relevant expertise, making the claims in their own first-person voice."
+        },
+        {
+          "feature": "AUD_PRB_011",
+          "what_it_measures": "How hard the post pushes readers toward one preferred solution.",
+          "edit": "local",
+          "from_value": "4_strong_directional_persuasion",
+          "to_value": "2_gentle_suggestion",
+          "from": "strong directional persuasion",
+          "to": "gentle suggestion",
+          "instruction": "Present your preferred solution as a gentle suggestion the reader may consider, not something they must do."
+        }
+      ]
+    },
+    {
+      "mix": "1 local + 1 structural + 3 author input",
+      "reaches_band": true,
+      "changes": [
+        {
+          "feature": "VOC_QUO_004",
+          "what_it_measures": "How a named expert is used: mentioned, paraphrased, quoted, or lead voice.",
+          "edit": "needs_author_input",
+          "from_value": "no_named_individual_expert",
+          "to_value": "named_but_only_mentioned",
+          "from": "no named individual expert",
+          "to": "named but only mentioned",
+          "instruction": "Mention a relevant expert or practitioner by name where it fits, without quoting them."
+        },
+        {
+          "feature": "EVD_MTH_004",
+          "what_it_measures": "How strongly the post claims that something causes a result.",
+          "edit": "local",
+          "from_value": "strong causal claim",
+          "to_value": "qualified causal claim",
+          "from": "strong causal claim",
+          "to": "qualified causal claim",
+          "instruction": "Tone down claims about results: say an action can or often helps, not that it will or ensures it."
+        },
+        {
+          "feature": "VOC_VOX_001",
+          "what_it_measures": "Who seems to be speaking: the company, an editor, a named expert, a founder.",
+          "edit": "needs_author_input",
+          "from_value": "editorial_explainer",
+          "to_value": "named_individual_expert",
+          "from": "editorial explainer",
+          "to": "named individual expert",
+          "instruction": "Write as a named person with relevant expertise, making the claims in their own first-person voice."
+        },
+        {
+          "feature": "STR_BLK_001",
+          "what_it_measures": "The repeated building block of the body: steps, tips, mistakes, Q&A, cases.",
+          "edit": "structural",
+          "from_value": "tip_or_recommendation",
+          "to_value": "question_answer_pair",
+          "from": "tip or recommendation",
+          "to": "question answer pair",
+          "instruction": "Organise the body as questions readers ask, each followed by a direct answer."
+        },
+        {
+          "feature": "VOC_VOX_010",
+          "what_it_measures": "How other voices enter: quotes, paraphrase, testimonials, sample scripts.",
+          "edit": "needs_author_input",
+          "from_value": "absent",
+          "to_value": "direct_quotation",
+          "from": "no",
+          "to": "direct quotation",
+          "instruction": "Bring in other voices as direct quotes, in the person's or source's own words."
+        }
+      ]
+    }
+  ],
+  "keep": [
+    {
+      "feature": "STR_FLW_006",
+      "what_it_measures": "Whether the opening states the main point before the body starts.",
+      "value_id": "yes",
+      "value": "yes"
+    },
+    {
+      "feature": "PUR_JOB_004",
+      "what_it_measures": "What you want the reader to do or believe after reading.",
+      "value_id": "adopt a recurring operating practice",
+      "value": "adopt a recurring operating practice"
+    },
+    {
+      "feature": "EXP_KNW_008",
+      "what_it_measures": "How much the post answers readers' likely questions and objections.",
+      "value_id": "occasional_explicit_questions_or_objections",
+      "value": "occasional explicit questions or objections"
+    },
+    {
+      "feature": "AUD_STK_005",
+      "what_it_measures": "Whether a small problem is escalated into a big business or safety risk.",
+      "value_id": "present",
+      "value": "yes"
+    },
+    {
+      "feature": "VOC_CRD_001",
+      "what_it_measures": "How the post earns trust: confident tone, expertise, experience, data, proof.",
+      "value_id": "firsthand_lived_or_operational_experience",
+      "value": "firsthand lived or operational experience"
+    }
+  ],
+  "text": "P(AI): 100%\n\nHere are some ideas to improve:\n\n1. End on a new point the post has not made yet, instead of summarising or restating what came before; tone down claims about results: say an action can or often helps, not that it will or ensures it; and write for beginners: explain basic concepts and define any specialist term when it first appears.\n2. End on a new point the post has not made yet, instead of summarising or restating what came before; write as a named person with relevant expertise, making the claims in their own first-person voice; and present your preferred solution as a gentle suggestion the reader may consider, not something they must do.\n3. Mention a relevant expert or practitioner by name where it fits, without quoting them; tone down claims about results: say an action can or often helps, not that it will or ensures it; and write as a named person with relevant expertise, making the claims in their own first-person voice. Also, organise the body as questions readers ask, each followed by a direct answer; and bring in other voices as direct quotes, in the person's or source's own words.\n\nKeeping the rest the same, especially the following aspects:\n\n* Thesis before first unit: yes (whether the opening states the main point before the body starts)\n* Change requested of reader: adopt a recurring operating practice (what you want the reader to do or believe after reading)\n* Question anticipation level: occasional explicit questions or objections (how much the post answers readers' likely questions and objections)\n* Stakes escalation: yes (whether a small problem is escalated into a big business or safety risk)\n* Dominant credibility basis: firsthand lived or operational experience (how the post earns trust: confident tone, expertise, experience, data, proof)"
+}
