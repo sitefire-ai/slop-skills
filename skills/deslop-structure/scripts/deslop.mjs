@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 const DEFAULT_GOAL = 0.2
 const API_DEFAULT_TARGET = 0.3
 const DEFAULT_MAX_ROUNDS = 3
+// Two scoring runs on one text can differ by up to about 1.5 in margin (SF-323), so a smaller rise is noise.
+const MARGIN_NOISE = 1.5
 
 // ---------------------------------------------------------------- run folder
 
@@ -91,6 +93,7 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
   const base = run.current
   if (base == null) throw new Error('Check the original post first.')
   if (!existsSync(join(runDir, 'versions', `v${base}.md`))) throw new Error('The run has no text of the post yet. Save it with the `original` command.')
+  if (run.recheck_original) throw new Error('Check the saved text of the post first: run `check`.')
   if (run.rounds.length >= run.settings.max_rounds) throw new Error(`The round limit of ${run.settings.max_rounds} is reached. Run \`extend\` first if the user allows more rounds.`)
   if (run.rounds.some((r) => r.base === base && r.path_number === path)) throw new Error(`Path ${path} was already tried from version ${base}. Choose another Path.`)
   const check = checkOf(runDir, base)
@@ -238,8 +241,10 @@ export function setOriginal(runDir, { file }) {
   if (!file || file === true || !existsSync(file)) throw new Error('Give the file with the post text: --file <path>.')
   if (run.rounds.length) throw new Error('The original can change only before round 1.')
   copyFileSync(file, join(runDir, 'versions', 'v0.md'))
+  // The first Check scored the API's own fetch of the URL. Check this copy too, so that every Round compares the same text.
+  run.recheck_original = run.versions.length > 0
   writeRun(runDir, run)
-  return { original: join(runDir, 'versions', 'v0.md') }
+  return { original: join(runDir, 'versions', 'v0.md'), next: 'Run `check` to check this text before round 1.' }
 }
 
 /** Records the Author input for one Move of the Round being rewritten, or that the user skipped it. */
@@ -283,7 +288,7 @@ export function status(runDir) {
 function pendingVersion(run) {
   if (run.status !== 'active') throw new Error('The run is finished.')
   const round = lastRound(run)
-  if (run.versions.length === 0) return 0
+  if (run.versions.length === 0 || run.recheck_original) return 0
   if (round?.stage === 'checking') return round.n
   if (round?.stage === 'rewriting') throw new Error(`Record the fidelity check of round ${round.n} first.`)
   throw new Error('No version is waiting for a Check.')
@@ -376,6 +381,12 @@ function recordError(runDir, run, n, response, now) {
     message: `${said}${retryText(retryAfter, now)}${ref} The run folder is kept.` })
 }
 
+/** A rewrite is worse when P(AI) went up, or when P(AI) is the same and the margin rose by more than the noise. */
+function isWorse(body, before) {
+  if (body.p_ai !== before.p_ai) return body.p_ai > before.p_ai
+  return typeof body.margin === 'number' && typeof before.margin === 'number' && body.margin - before.margin > MARGIN_NOISE
+}
+
 /** Records one Slop API response for the version being checked, then decides the next step. */
 export function recordCheck(runDir, response, { now = new Date() } = {}) {
   const run = readRun(runDir)
@@ -383,11 +394,16 @@ export function recordCheck(runDir, response, { now = new Date() } = {}) {
   const n = pendingVersion(run)
   if (response.status !== 200) return recordError(runDir, run, n, response, now)
   const body = response.body
+  if (run.recheck_original) {
+    copyFileSync(join(runDir, 'checks', 'v0.json'), join(runDir, 'checks', 'v0-url.json'))
+    run.versions = []
+    delete run.recheck_original
+  }
   writeFileSync(join(runDir, 'checks', `v${n}.json`), `${JSON.stringify(body, null, 2)}\n`)
   run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: feedbackOf(body).target_p_ai, word_count: body.word_count, truncated: body.truncated, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
   let reverted = false
   if (round && n === round.n) {
-    reverted = body.p_ai > versionOf(run, round.base).p_ai
+    reverted = isWorse(body, versionOf(run, round.base))
     round.stage = 'done'
     round.outcome = reverted ? 'reverted' : 'kept'
     if (!reverted) run.current = n
@@ -489,7 +505,7 @@ function roundItem(run, round) {
   const right = stage ? `<span class="chip pulse">${stage}…</span>` : after ? `<span class="tl-p num">${pct(after.p_ai)}</span>` : `<span class="chip">${round.outcome === 'not_checked' ? 'Not checked' : 'Undone'}</span>`
   const outcome = {
     kept: after && `${pct(before.p_ai)} → ${pct(after.p_ai)}`,
-    reverted: after && `${pct(before.p_ai)} → ${pct(after.p_ai)} · P(AI) went up, so this round was undone`,
+    reverted: after && `${pct(before.p_ai)} → ${pct(after.p_ai)} · the post got more AI-shaped, so this round was undone`,
     meaning_changed: 'The fidelity check failed, so this round was undone',
     not_checked: 'Not checked: the run stopped on an API error',
   }[round.outcome]

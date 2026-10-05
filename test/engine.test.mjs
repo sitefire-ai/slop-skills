@@ -381,3 +381,31 @@ test('an answer of 200 that is not a Check stops the run as an internal error', 
   const { decision } = await check(runDir, { fetchImpl, env: {} })
   assert.equal(decision.error.code, 'internal')
 })
+
+// ---------------------------------------------------------------- the URL re-check and the margin rule
+
+test('a URL run checks the skill\'s own copy of the post before round 1, and decides from that Check', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+  const { runDir } = init({ input: 'https://example.com/blog/async', runsDir: dir })
+  recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
+  writeFileSync(join(dir, 'post.md'), POST)
+  setOriginal(runDir, { file: join(dir, 'post.md') })
+  assert.throws(() => startRound(runDir, { path: 1 }), /Check the saved text/)
+  const { decision, run } = recordCheck(runDir, ok(sf323(golden('borderline'), { margin: 4.7 })))
+  assert.equal(decision.recommended.mix, '1 local')
+  assert.equal(run.versions.length, 1)
+  assert.equal(run.versions[0].p_ai, golden('borderline').p_ai)
+})
+
+test('P(AI) unchanged and the margin up by more than 1.5: the round is undone', () => {
+  const { runDir } = newRun()
+  const { decision, run } = roundOne(runDir, sf323(golden('ai_shaped'), { margin: 14.5 }))
+  assert.equal(decision.reverted, true)
+  assert.equal(run.rounds[0].outcome, 'reverted')
+})
+
+test('P(AI) unchanged and the margin up by less than 1.5: the round is kept', () => {
+  const { runDir } = newRun()
+  const { run } = roundOne(runDir, sf323(golden('ai_shaped'), { margin: 13.4 }))
+  assert.equal(run.rounds[0].outcome, 'kept')
+})

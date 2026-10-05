@@ -37,7 +37,7 @@ Done when: `init` printed a `run` folder and the report is open.
 ## 2. Check the original post
 
 1. Run `deslop check <run>`. It sends the post to the Slop API at `SLOP_API_URL` (default `https://sitefire.ai`).
-2. For a URL, get the text of the post if `check` did not stop the run: fetch the page with the first tool you have (Firecrawl, your web fetch tool, a browser tool, then `curl`). Save it as markdown, then run `deslop original <run> --file <path>`.
+2. For a URL, get the text of the post if `check` did not stop the run: fetch the page with the first tool you have (Firecrawl, your web fetch tool, a browser tool, then `curl`). Save it as markdown, then run `deslop original <run> --file <path>`. Run `deslop check <run>` again: this Check scores your copy, so that every Round compares the same text.
 3. If the text is not a blog post (for example a product page, a paper or a forum thread), run `deslop flag <run> --not-blog-post`. The detector learned on blog posts only.
 4. Tell the user the P(AI), the Band, and every warning in the report.
 
@@ -96,7 +96,7 @@ Done when: the user has the P(AI) at the start and at the end, the stop reason, 
 | `fetch_locally` | The API could not fetch the URL. Fetch the post yourself (step 2), run `deslop original`, then `deslop check` again. |
 | `stop` | Step 8. For an API error, give the user `decision.message`. It has the error code and the time to try again. |
 
-If `decision.reverted` is true, the last Round made P(AI) higher, or its fidelity check failed. The engine kept the better version. Tell the user in one sentence.
+If `decision.reverted` is true, the last Round made the post more AI-shaped (a higher P(AI), or the same P(AI) with a margin more than 1.5 higher), or its fidelity check failed. The engine kept the better version. Tell the user in one sentence.
 
 ## Questions
 
