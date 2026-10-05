@@ -58,6 +58,12 @@ export function init({ input, goal = DEFAULT_GOAL, maxRounds = DEFAULT_MAX_ROUND
 
 // ---------------------------------------------------------------- Paths
 
+/**
+ * The rewrite guidance of a Check. Since SF-323 the API nests it in `feedback` ({ target_p_ai, paths, keep, text })
+ * and names `reaches_target` on each Path. Before SF-323 the fields are at the top level, with `reaches_band`.
+ */
+const feedbackOf = (body) => body.feedback ?? { target_p_ai: body.target_p_ai ?? null, paths: body.paths ?? [], keep: body.keep ?? [], text: body.text }
+
 const countKind = (path, kind) => path.changes.filter((c) => c.edit === kind).length
 const reaches = (path) => path.reaches_target ?? path.reaches_band ?? true
 
@@ -88,7 +94,7 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
   if (run.rounds.length >= run.settings.max_rounds) throw new Error(`The round limit of ${run.settings.max_rounds} is reached. Run \`extend\` first if the user allows more rounds.`)
   if (run.rounds.some((r) => r.base === base && r.path_number === path)) throw new Error(`Path ${path} was already tried from version ${base}. Choose another Path.`)
   const check = checkOf(runDir, base)
-  const chosen = check.paths?.[path - 1]
+  const chosen = feedbackOf(check).paths[path - 1]
   if (!chosen) throw new Error(`Version ${base} has no Path ${path}.`)
   const n = run.rounds.length + 1
   run.rounds.push({ n, base, path_number: path, path: chosen, chosen_by: chosenBy, stage: 'rewriting', author_input: [], fidelity: null })
@@ -98,7 +104,7 @@ export function startRound(runDir, { path, chosenBy = 'user' }) {
     rewrite_from: join(runDir, 'versions', `v${base}.md`),
     write_to: join(runDir, 'versions', `v${n}.md`),
     moves: chosen.changes.map(({ feature, edit, what_it_measures, from, to, instruction }) => ({ feature, edit, what_it_measures, from, to, instruction })),
-    keep: (check.keep ?? []).map(({ what_it_measures, value }) => ({ what_it_measures, value })),
+    keep: feedbackOf(check).keep.map(({ what_it_measures, value }) => ({ what_it_measures, value })),
   }
 }
 
@@ -122,7 +128,7 @@ export function recordFidelity(runDir, { passed, summary = '' }) {
 
 /** The goal the run can aim for: the API plans to 0.3 until it echoes `target_p_ai` (SF-323). */
 function effectiveGoal(run, body) {
-  return body.target_p_ai == null ? Math.max(run.settings.goal, API_DEFAULT_TARGET) : run.settings.goal
+  return feedbackOf(body).target_p_ai == null ? Math.max(run.settings.goal, API_DEFAULT_TARGET) : run.settings.goal
 }
 
 const pct = (p) => `${Math.round(p * 100)}%`
@@ -132,7 +138,7 @@ const confirmOrRewrite = (run) => (run.settings.interactive && !run.settings.aut
 function openCandidates(runDir, run) {
   const tried = new Set(run.rounds.filter((r) => r.base === run.current).map((r) => r.path_number))
   const conflicts = run.conflicts?.[run.current] ?? {}
-  const open = rankPaths(checkOf(runDir, run.current).paths ?? [], run.settings).filter((c) => !tried.has(c.number)).map((c) => ({ ...c, conflict: conflicts[c.number] }))
+  const open = rankPaths(feedbackOf(checkOf(runDir, run.current)).paths, run.settings).filter((c) => !tried.has(c.number)).map((c) => ({ ...c, conflict: conflicts[c.number] }))
   return [...open.filter((c) => !c.conflict), ...open.filter((c) => c.conflict)]
 }
 
@@ -321,6 +327,7 @@ const ERROR_CAUSES = {
   invalid_url: 'The URL is not an http or https URL.',
   url_homepage: 'The URL is a homepage, not a post.',
   url_refused: 'The URL is on sitefire.ai or in a private address range.',
+  invalid_target: 'The goal must be more than 0 and less than 1.',
   paste_too_long: 'The post has more than 20,000 characters.',
   paste_too_short: 'The post has fewer than 300 words.',
   rate_limited: 'The daily limit of 30 Checks per IP address, or the burst guard, refused the Check.',
@@ -377,7 +384,7 @@ export function recordCheck(runDir, response, { now = new Date() } = {}) {
   if (response.status !== 200) return recordError(runDir, run, n, response, now)
   const body = response.body
   writeFileSync(join(runDir, 'checks', `v${n}.json`), `${JSON.stringify(body, null, 2)}\n`)
-  run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: body.target_p_ai ?? null, word_count: body.word_count, truncated: body.truncated, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
+  run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: feedbackOf(body).target_p_ai, word_count: body.word_count, truncated: body.truncated, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
   let reverted = false
   if (round && n === round.n) {
     reverted = body.p_ai > versionOf(run, round.base).p_ai
@@ -462,7 +469,7 @@ function offeredPaths(runDir, run, next) {
   const check = checkOf(runDir, run.current)
   const conflicts = run.conflicts?.[run.current] ?? {}
   return next.candidates.map((c) => {
-    const path = check.paths[c.path - 1]
+    const path = feedbackOf(check).paths[c.path - 1]
     const rec = next.recommended?.path === c.path
     const conflict = conflicts[c.path]
     return `<article class="offer${rec ? ' rec' : ''}"><div class="round-head"><h3>Path ${c.path} <span class="muted thin">· ${esc(path.mix)}</span></h3>
@@ -544,7 +551,7 @@ function statusLine(run, goal) {
 
 function keepList(runDir, run) {
   if (run.current == null) return ''
-  const keep = checkOf(runDir, run.current).keep ?? []
+  const keep = feedbackOf(checkOf(runDir, run.current)).keep
   if (!keep.length) return ''
   return `<section class="card stack"><p class="eyebrow">Kept on purpose</p><ul class="keep">${keep.map((k) => `<li><span><b>${esc(k.what_it_measures)}</b> · ${esc(k.value)}</span></li>`).join('')}</ul></section>`
 }

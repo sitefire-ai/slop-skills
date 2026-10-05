@@ -42,15 +42,22 @@ test('auto path rewrites along the recommended Path without a confirmation quest
   assert.equal(decision.recommended.mix, '3 local')
 })
 
-/** A Check after SF-323: the API echoes the target and sends the margin. */
+/** A Check in the SF-323 shape: the score at the top level, the rewrite guidance in `feedback`, `reaches_target` on each Path. */
+function sf323(flat, { margin, target = 0.2 } = {}) {
+  const { paths, keep, text, ...top } = flat
+  const toTarget = paths.map(({ reaches_band, ...path }) => ({ ...path, reaches_target: reaches_band ?? true }))
+  return { ...top, margin: margin ?? top.margin, feedback: { target_p_ai: target, paths: toTarget, keep, text } }
+}
+
+/** The SF-323 Check of a rewrite: P(AI) 0.24 with one Path left, unless the overrides say otherwise. */
 function afterRound(overrides) {
   const body = golden('ai_shaped')
-  return { ...body, target_p_ai: 0.2, margin: 1.6, p_ai: 0.24, band: 'human_shaped', paths: body.paths.slice(0, 1), ...overrides }
+  return sf323({ ...body, margin: 1.6, p_ai: 0.24, band: 'human_shaped', paths: body.paths.slice(0, 1), ...overrides })
 }
 
 /** Runs round 1 along the recommended Path and records the given Check of the rewrite. */
 function roundOne(runDir, body) {
-  const first = recordCheck(runDir, ok({ ...golden('ai_shaped'), target_p_ai: 0.2, margin: 12.48 }))
+  const first = recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
   const { write_to } = startRound(runDir, { path: first.decision.recommended.path })
   writeFileSync(write_to, 'The rewrite.\n')
   recordFidelity(runDir, { passed: true, summary: '9 of 9 claims kept' })
@@ -80,7 +87,7 @@ test('P(AI) below the goal: the run stops', () => {
 
 test('P(AI) went up: the round is reverted and the next candidate Path of the better version is recommended', () => {
   const { runDir } = newRun()
-  const { decision, run } = roundOne(runDir, { ...golden('ai_shaped'), target_p_ai: 0.2, margin: 13.1, p_ai: 0.99999999 })
+  const { decision, run } = roundOne(runDir, sf323({ ...golden('ai_shaped'), p_ai: 0.99999999 }, { margin: 13.1 }))
   assert.equal(decision.action, 'confirm_path')
   assert.equal(decision.reverted, true)
   assert.equal(decision.recommended.mix, '2 local + 1 author input')
@@ -91,7 +98,7 @@ test('P(AI) went up: the round is reverted and the next candidate Path of the be
 /** Runs `rounds` rounds, with a max of `rounds`; the last Check gets the `last` overrides. */
 function runRounds(rounds, last) {
   const { runDir } = newRun({ maxRounds: rounds })
-  let result = recordCheck(runDir, ok({ ...golden('ai_shaped'), target_p_ai: 0.2, margin: 12.48 }))
+  let result = recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
   for (let n = 1; n <= rounds; n++) {
     const { write_to } = startRound(runDir, { path: result.decision.recommended.path })
     writeFileSync(write_to, `Rewrite ${n}.\n`)
@@ -177,7 +184,7 @@ test('report: the goal line falls back to the API target of 30% while the API do
 
 test('report: the goal line shows the run goal once the API echoes the target', () => {
   const { runDir } = newRun()
-  recordCheck(runDir, ok({ ...golden('ai_shaped'), target_p_ai: 0.2, margin: 12.48 }))
+  recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
   assert.match(textOf(report(runDir), 'p-chart'), /GOAL UNDER 20%/)
 })
 
@@ -275,7 +282,7 @@ test('a borderline post gets its one Path recommended', () => {
 
 test('a human_shaped post under the goal stops at the first Check, and nothing is written', () => {
   const { runDir } = newRun()
-  const { decision, output } = recordCheck(runDir, ok({ ...golden('human_shaped'), target_p_ai: 0.2, margin: -7.3 }))
+  const { decision, output } = recordCheck(runDir, ok(sf323(golden('human_shaped'), { margin: -7.3 })))
   assert.equal(decision.action, 'stop')
   assert.equal(decision.reason, 'goal_reached')
   assert.equal(output, null)
@@ -302,7 +309,7 @@ test('only Paths that do not reach the target are left: the user is asked', () =
   const { runDir } = newRun()
   const body = golden('ai_shaped')
   const paths = body.paths.map((p) => ({ ...p, reaches_band: false }))
-  const { decision } = recordCheck(runDir, ok({ ...body, paths }))
+  const { decision } = recordCheck(runDir, ok(sf323({ ...body, paths })))
   assert.equal(decision.action, 'ask_user')
   assert.equal(decision.reason, 'no_path_reaches_target')
 })
