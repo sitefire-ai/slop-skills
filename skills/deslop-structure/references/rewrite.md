@@ -16,6 +16,8 @@ Rewrite the full post along the chosen Path. Do the rewrite yourself, with this 
 2. Keep every item of the Keep list. These qualities already read human.
 3. Keep every entry of the claim ledger: each number, name, claim, recommendation, link and call to action. You can move an entry or say it in other words. Its meaning stays the same.
 4. Take new content only from the post itself or from confirmed author input. A Move that asks for a new point, an example or a voice gets it from there: a consequence of what the post says, a caveat it makes, or a point moved from the body. If a Move needs content that neither source has, carry out the part that needs no new facts.
+
+   Example, for "End on a new point the post has not made yet": the original ends with a summary, and its body says in passing that some meetings still need to happen live. Move that point to the end and make it the last word. Do not write a new lesson, for example "the hardest part was not the tools". That sentence is a new claim, and the fidelity check fails it.
 5. Keep the language, the voice and the markdown format of the post. Keep the title line, unless a Move changes it.
 6. Write the full post to `write_to`. Write only the post: no notes, no comments, no summary of the changes.
 
