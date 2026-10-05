@@ -40,6 +40,7 @@ Done when: `init` printed a `run` folder.
 3. If the text is not a blog post (for example a product page, a paper or a forum thread), run `deslop flag <run> --not-blog-post`. The detector learned on blog posts only.
 4. Show the report. See [The report](#the-report).
 5. Tell the user the P(AI), the Band, and every warning in the report.
+6. If `decision.action` is `stop`, for example because the post is already under the Goal, go to step 8.
 
 Done when: the report shows the P(AI) of the original post, and for a URL, `versions/v0.md` in the run folder holds the post text.
 
@@ -80,7 +81,7 @@ Done when: `check` printed a `decision`, and you started its action.
 ## 8. Finish
 
 1. Tell the user the result: the stop reason from `decision.message`, the number of rounds, and every P(AI) that the API measured: at the start, and at the end if a Round was checked. If the run stopped before the first Check, say that no P(AI) was measured.
-2. Give the path of the output file (`output`): `<name>.deslopped.md` next to the input file, or in the run folder for a URL. If `output` is null, no version was better than the original.
+2. Give the path of the output file (`output`): `<name>.deslopped.md` next to the input file, or in the run folder for a URL. If `output` is null, no rewrite was kept: either no Round ran, or no Round made the post better.
 3. Give the path of the run folder. It keeps every version, every Check and every decision.
 4. Say once that the skill is an experiment: a post that the detector calls human can still read as AI-written to people.
 
@@ -110,10 +111,13 @@ Show it first after the first Check, then keep it current:
 
 - If you can publish a private HTML artifact (for example on Claude), publish `report.html` after each `check` and each `start-round`. Publish the same file each time, so that the link stays the same. The report shows the post's title, Moves and Keep list, so keep the artifact private.
 - If you cannot, open `report.html` in the browser once. It reloads itself while the run is active.
+- If you can do neither, give the user the path of `report.html`.
+
+The engine writes a full HTML page with no external files.
 
 ## Token use
 
-After each phase, run `deslop tokens <run> --phase <name> --count <n>`. The phases are `intake`, `ledger`, `author_input`, `rewrite` and `fidelity`. Use the count that your host shows. If it shows none, estimate one token per four characters of the prompts and outputs of the phase, and add `--estimated`.
+After each phase that ran, run `deslop tokens <run> --phase <name> --count <n>`. The phases are `intake`, `ledger`, `author_input`, `rewrite` and `fidelity`. Use the count that your host shows. If it shows none, estimate one token per four characters of the prompts and outputs of the phase, and add `--estimated`.
 
 ## Rules
 
