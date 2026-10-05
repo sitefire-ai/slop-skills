@@ -32,7 +32,7 @@ Write its answer to `fidelity/round-<n>.md` in the run folder.
 > You compare a rewrite of a blog post with its original. Find every place where the rewrite changes the meaning. A structural change is allowed: a new order, a new opening or ending, a new voice, shorter text, a claim that is less strong than before. These changes are failures:
 >
 > 1. A ledger entry is missing, or its meaning changed. A number, a name, a link target or a call to action changed.
-> 2. The rewrite adds a fact, a number, a name, a quote or a link that is not in the original or in the confirmed author input.
+> 2. The rewrite adds a fact, a number, a name, a quote or a link that is not in the original or in the confirmed author input. A plain definition of a term that the original uses is not an added fact. A new claim about the topic is.
 > 3. A recommendation now says a different thing, or the opposite.
 > 4. An item of the Keep list is gone.
 >
