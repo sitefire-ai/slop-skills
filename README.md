@@ -12,7 +12,7 @@ You give the skill a blog post, as a URL or as a markdown or text file. The skil
 4. It rewrites the post along the Path. It keeps every number, name, claim and link of the original. A separate fidelity check compares the rewrite with the original and finds changed meaning.
 5. It checks the post again, and repeats until P(AI) is under the goal (0.2 by default) or you stop it.
 
-A report shows P(AI) and the detector's margin by round, and what each round changed. The skill never changes your file. It writes the result to `<name>.deslopped.md`, and it keeps every version in a run folder under `./deslop-runs/`.
+A report shows P(AI) by round and what each round changed. The skill never changes your file. It writes the result to `<name>.deslopped.md`, and it keeps every version in a run folder under `./deslop-runs/`.
 
 Word-level rewriting does not help here. In the SlopShape study, a rewrite that changed 73% of the words left structural detection unchanged. This skill changes the structure: how a post opens and ends, who speaks, how the body is built, and how strong its claims are.
 

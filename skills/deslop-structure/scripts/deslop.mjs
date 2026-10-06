@@ -464,16 +464,6 @@ function pChart(run, goal, rounds) {
   return lineChart({ id: 'p-chart', label: 'P(AI) by round', points, rounds, y: [0, 1], ticks: [0, 0.3, 0.7, 1], zones, goal, fmt: pct })
 }
 
-function marginChart(run, rounds) {
-  const reverted = revertedRounds(run)
-  const points = run.versions.filter((v) => typeof v.margin === 'number').map((v) => ({ n: v.n, v: v.margin, band: v.band, reverted: reverted.has(v.n) }))
-  if (points.length === 0) return ''
-  const lo = Math.min(0, ...points.map((p) => p.v)), hi = Math.max(0, ...points.map((p) => p.v))
-  const pad = Math.max(1, (hi - lo) * 0.12)
-  const fig = lineChart({ id: 'margin-chart', label: 'Margin by round', points, rounds, y: [lo - pad, hi + pad], ticks: [0], fmt: (v) => v.toFixed(1) })
-  return fig.replace('</section>', '<p class="muted small">The detector’s score before calibration. Lower is more human. It moves while P(AI) still reads 100%.</p></section>')
-}
-
 function moveItem(change, input) {
   const author = input ? `<div class="muted small">${input.skipped ? 'Author input skipped: this Move was dropped.' : `Author input: ${esc(input.value)}${input.source ? ` (from ${esc(input.source)})` : ''}`}</div>` : ''
   return `<li class="move${input?.skipped ? ' dropped' : ''}"><span class="kind ${esc(change.edit)}">${esc(KIND_NAME[change.edit] ?? change.edit)}</span>
@@ -607,7 +597,6 @@ export function renderReport(runDir, run) {
 ${banners(run)}
 ${run.next?.message && !run.error ? `<p class="manager" id="manager">${esc(run.next.message)}</p>` : ''}
 ${pChart(run, goal, rounds)}
-${marginChart(run, rounds)}
 ${timeline(runDir, run)}
 ${keepList(runDir, run)}
 <footer class="stack tight">${tokenLine(run)}<p class="muted small">This skill is an experiment: a post that the detector calls human can still read as AI-written to people. Every version is kept in the run folder${latest?.bundle_version ? ` · bundle ${esc(latest.bundle_version)}` : ''}.</p></footer>

@@ -188,10 +188,12 @@ test('report: the goal line shows the run goal once the API echoes the target', 
   assert.match(textOf(report(runDir), 'p-chart'), /GOAL UNDER 20%/)
 })
 
-test('report: no margin chart when the API sends no margin', () => {
+test('report: no margin chart, even when the API sends the margin', () => {
   const { runDir } = newRun()
-  recordCheck(runDir, ok(golden('ai_shaped')))
-  assert.equal(textOf(report(runDir), 'margin-chart'), null)
+  recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
+  const html = report(runDir)
+  assert.equal(textOf(html, 'margin-chart'), null)
+  assert.doesNotMatch(html.replace(/<style>[\s\S]*?<\/style>/, ''), /[Mm]argin/)
 })
 
 test('report, running state: the measured round and the round being rewritten', () => {
@@ -202,10 +204,9 @@ test('report, running state: the measured round and the round being rewritten', 
   assert.equal(textOf(html, 'p-now'), '36%')
   assert.equal(textOf(html, 'band-now'), 'Borderline')
   assert.equal(timelineRounds(html), 2)
-  assert.match(textOf(html, 'margin-chart'), /12\.5/)
 })
 
-test('report, done state: every round, the final P(AI), and the margin by round', () => {
+test('report, done state: every round and the final P(AI)', () => {
   const { runDir } = newRun()
   roundOne(runDir, afterRound({ p_ai: 0.125, margin: 0.8, paths: [] }))
   const html = report(runDir)
@@ -213,7 +214,6 @@ test('report, done state: every round, the final P(AI), and the margin by round'
   assert.equal(textOf(html, 'band-now'), 'Human-shaped')
   assert.equal(timelineRounds(html), 1)
   assert.match(textOf(html, 'status'), /goal/i)
-  assert.match(textOf(html, 'margin-chart'), /0\.8/)
 })
 
 test('report: a banner when the post is not in English', () => {

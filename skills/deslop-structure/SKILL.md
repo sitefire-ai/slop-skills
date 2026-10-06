@@ -105,7 +105,7 @@ Ask one question at a time. Use your host's question tool if it has one. Give nu
 
 ## The report
 
-The engine writes `report.html` in the run folder after every command. It shows the P(AI) by round, the margin by round, and a timeline of the Moves of each round.
+The engine writes `report.html` in the run folder after every command. It shows the P(AI) by round and a timeline of the Moves of each round.
 
 Show it first after the first Check, then keep it current:
 
