@@ -397,15 +397,60 @@ test('a URL run checks the skill\'s own copy of the post before round 1, and dec
   assert.equal(run.versions[0].p_ai, golden('borderline').p_ai)
 })
 
-test('P(AI) unchanged and the margin up by more than 1.5: the round is undone', () => {
+test('P(AI) unchanged: the round is kept, whatever the margin does', () => {
   const { runDir } = newRun()
-  const { decision, run } = roundOne(runDir, sf323(golden('ai_shaped'), { margin: 14.5 }))
-  assert.equal(decision.reverted, true)
-  assert.equal(run.rounds[0].outcome, 'reverted')
+  const { run } = roundOne(runDir, sf323(golden('ai_shaped'), { margin: 16.5 }))
+  assert.equal(run.rounds[0].outcome, 'kept')
 })
 
-test('P(AI) unchanged and the margin up by less than 1.5: the round is kept', () => {
-  const { runDir } = newRun()
-  const { run } = roundOne(runDir, sf323(golden('ai_shaped'), { margin: 13.4 }))
-  assert.equal(run.rounds[0].outcome, 'kept')
+// ---------------------------------------------------------------- the API's 20,000-character limit
+
+/** A fetch that records each call and answers with the given Check. */
+function fakeFetch(body) {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push(JSON.parse(init.body))
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  return { calls, fetchImpl }
+}
+
+const longPost = (chars) => `# A long post\n\n${'word '.repeat(Math.ceil(chars / 5))}`.slice(0, chars)
+
+test('a post over 20,000 characters stops before any API call, with a plain message', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+  writeFileSync(join(dir, 'long.md'), longPost(21000))
+  const { runDir } = init({ input: join(dir, 'long.md'), runsDir: join(dir, 'runs') })
+  const { calls, fetchImpl } = fakeFetch(golden('ai_shaped'))
+  const { decision } = await check(runDir, { fetchImpl, env: {} })
+  assert.equal(calls.length, 0)
+  assert.equal(decision.action, 'stop')
+  assert.equal(decision.reason, 'too_long')
+  assert.match(decision.message, /20,000 characters/)
+})
+
+test('link targets and images are left out before the length check, as the API leaves them out anyway', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+  const link = `[a source](https://example.com/${'x'.repeat(200)})`
+  writeFileSync(join(dir, 'post.md'), `${longPost(18000)}\n\n${Array(20).fill(link).join(' ')}\n\n![chart](https://example.com/chart.png)\n`)
+  const { runDir } = init({ input: join(dir, 'post.md'), runsDir: join(dir, 'runs') })
+  const { calls, fetchImpl } = fakeFetch(golden('ai_shaped'))
+  await check(runDir, { fetchImpl, env: {} })
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].text, /a source a source/)
+  assert.doesNotMatch(calls[0].text, /example\.com/)
+})
+
+test('a URL run whose own copy is over the limit keeps the API\'s Check of the URL', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+  const { runDir } = init({ input: 'https://example.com/blog/long-post', runsDir: dir })
+  recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
+  writeFileSync(join(dir, 'copy.md'), longPost(21000))
+  setOriginal(runDir, { file: join(dir, 'copy.md') })
+  const { calls, fetchImpl } = fakeFetch(golden('borderline'))
+  const { decision } = await check(runDir, { fetchImpl, env: {} })
+  assert.equal(calls.length, 0)
+  assert.equal(decision.action, 'confirm_path')
+  assert.doesNotThrow(() => startRound(runDir, { path: decision.recommended.path }))
+  assert.match(textOf(report(runDir), 'banners'), /20,000 characters/)
 })

@@ -95,9 +95,9 @@ Done when: the user has the stop reason, every measured P(AI), the output path a
 | `rewrite` | Step 3 without the question: start the recommended Path with `--auto`. |
 | `ask_user` | Interactive runs only. Ask the question from `decision.message` with `decision.options`. For `more`, run `deslop extend <run>`, then start the recommended Path. For `try`, start the recommended Path. For `stop`, run `deslop stop <run>`. |
 | `fetch_locally` | The API could not fetch the URL. Fetch the post yourself (step 2), run `deslop original`, then `deslop check` again. |
-| `stop` | Step 8. For an API error, give the user `decision.message`. It has the error code and the time to try again. A stopped run cannot continue. To try again, start a new run with `deslop init`. For the code `network`, tell the user that the API at `SLOP_API_URL` did not answer. |
+| `stop` | Step 8. For the reason `too_long`, give the user `decision.message`: the post is over the API's limit of 20,000 characters. For an API error, give the user `decision.message`. It has the error code and the time to try again. A stopped run cannot continue. To try again, start a new run with `deslop init`. For the code `network`, tell the user that the API at `SLOP_API_URL` did not answer. |
 
-If `decision.reverted` is true, the last Round made the post more AI-shaped (a higher P(AI), or the same P(AI) with a margin more than 1.5 higher), or its fidelity check failed. The engine kept the better version. Tell the user in one sentence.
+If `decision.reverted` is true, the last Round made P(AI) higher, or its fidelity check failed. The engine kept the better version. Tell the user in one sentence.
 
 ## Questions
 

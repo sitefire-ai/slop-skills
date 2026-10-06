@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url'
 const DEFAULT_GOAL = 0.2
 const API_DEFAULT_TARGET = 0.3
 const DEFAULT_MAX_ROUNDS = 3
-// Two scoring runs on one text can differ by up to about 1.5 in margin (SF-323), so a smaller rise is noise.
-const MARGIN_NOISE = 1.5
+// The API refuses a text over this many characters (`paste_too_long`).
+const MAX_CHARS = 20000
 
 // ---------------------------------------------------------------- run folder
 
@@ -294,11 +294,31 @@ function pendingVersion(run) {
   throw new Error('No version is waiting for a Check.')
 }
 
+/** The text as the API scores it: link targets and images carry no words, and the API drops them anyway. */
+const forApi = (text) => text.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+
+/** A version over the API's limit: no call. A URL run keeps the API's own Check; any other version stops the run. */
+function tooLong(runDir, run, n, chars) {
+  const size = `${chars.toLocaleString('en')} characters`
+  if (run.recheck_original) {
+    delete run.recheck_original
+    run.notes = [...(run.notes ?? []), `Your copy of the post has ${size}, more than the API's limit of 20,000 characters. The run uses the API's own Check of the URL.`]
+    return logDecision(runDir, run, decide(runDir, run))
+  }
+  const round = lastRound(run)
+  if (n > 0 && round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
+  const what = n === 0 ? 'The post' : `The rewrite of round ${n}`
+  return logDecision(runDir, run, { action: 'stop', reason: 'too_long',
+    message: `${what} has ${size} without link targets and images, and the Slop API takes at most 20,000 characters. Shorten it, or check a part of it.` })
+}
+
 /** Checks the pending version with the Slop API (SLOP_API_URL, default https://sitefire.ai) and decides the next step. */
 export async function check(runDir, { env = process.env, fetchImpl = fetch, now = new Date() } = {}) {
   const run = readRun(runDir)
   const n = pendingVersion(run)
-  const text = readText(join(runDir, 'versions', `v${n}.md`))
+  const raw = readText(join(runDir, 'versions', `v${n}.md`))
+  const text = raw == null ? null : forApi(raw)
+  if (text != null && text.length > MAX_CHARS) return tooLong(runDir, run, n, text.length)
   const input = text != null ? { text } : { url: run.input.source }
   const base = (env.SLOP_API_URL || 'https://sitefire.ai').replace(/\/+$/, '')
   let response
@@ -381,11 +401,8 @@ function recordError(runDir, run, n, response, now) {
     message: `${said}${retryText(retryAfter, now)}${ref} The run folder is kept.` })
 }
 
-/** A rewrite is worse when P(AI) went up, or when P(AI) is the same and the margin rose by more than the noise. */
-function isWorse(body, before) {
-  if (body.p_ai !== before.p_ai) return body.p_ai > before.p_ai
-  return typeof body.margin === 'number' && typeof before.margin === 'number' && body.margin - before.margin > MARGIN_NOISE
-}
+/** A rewrite is worse when P(AI) went up. */
+const isWorse = (body, before) => body.p_ai > before.p_ai
 
 /** Records one Slop API response for the version being checked, then decides the next step. */
 export function recordCheck(runDir, response, { now = new Date() } = {}) {
@@ -497,7 +514,7 @@ function roundItem(run, round) {
     kept: after && `${pct(before.p_ai)} → ${pct(after.p_ai)}`,
     reverted: after && `${pct(before.p_ai)} → ${pct(after.p_ai)} · the post got more AI-shaped, so this round was undone`,
     meaning_changed: 'The fidelity check failed, so this round was undone',
-    not_checked: 'Not checked: the run stopped on an API error',
+    not_checked: 'Not checked: the run stopped before the Check',
   }[round.outcome]
   const fidelity = round.fidelity ? `<p class="muted small">Fidelity check: ${round.fidelity.passed ? 'passed' : 'failed'}${round.fidelity.summary ? ` · ${esc(round.fidelity.summary)}` : ''}</p>` : ''
   return `<li class="tl-item" data-round="${round.n}"><div class="tl-rail"><span class="tl-node ${node}">${round.n}</span></div>
@@ -530,6 +547,7 @@ function timeline(runDir, run) {
 
 function banners(run) {
   const list = []
+  for (const note of run.notes ?? []) list.push(note)
   if (run.flags?.not_blog_post) list.push('This text does not look like a blog post. The detector learned on blog posts only, so read the result with care.')
   const seen = new Set()
   for (const v of run.versions) {
