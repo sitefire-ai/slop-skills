@@ -1,0 +1,63 @@
+{
+  "token": "tok-borderline",
+  "result_url": "https://sitefire.ai/api/slop/v1/check/tok-borderline",
+  "bundle_version": "1.0.0",
+  "cached": false,
+  "p_ai": 0.553131944188416,
+  "band": "borderline",
+  "word_count": 383,
+  "truncated": false,
+  "language": "en",
+  "warnings": [],
+  "paths": [
+    {
+      "mix": "1 local",
+      "reaches_band": true,
+      "changes": [
+        {
+          "feature": "STR_STG_008",
+          "what_it_measures": "How the post ends: summary, action plan, sales ask, or no conclusion.",
+          "edit": "local",
+          "from_value": "restated_thesis_or_reframe",
+          "to_value": "related_content_or_resource_route",
+          "from": "restated thesis or reframe",
+          "to": "related content or resource route",
+          "instruction": "Close the post by pointing readers to a related article, guide or resource for their next step."
+        }
+      ]
+    }
+  ],
+  "keep": [
+    {
+      "feature": "ACT_LVL_038",
+      "what_it_measures": "How directly the post asks readers to buy, book or contact.",
+      "value_id": "resource_or_learn_more_invitation",
+      "value": "resource or learn more invitation"
+    },
+    {
+      "feature": "PUR_JOB_004",
+      "what_it_measures": "What you want the reader to do or believe after reading.",
+      "value_id": "adopt a recurring operating practice",
+      "value": "adopt a recurring operating practice"
+    },
+    {
+      "feature": "ACT_STP_008",
+      "what_it_measures": "Who is expected to carry out the advice.",
+      "value_id": "cross_functional_team",
+      "value": "cross functional team"
+    },
+    {
+      "feature": "VOC_CRD_001",
+      "what_it_measures": "How the post earns trust: confident tone, expertise, experience, data, proof.",
+      "value_id": "firsthand_lived_or_operational_experience",
+      "value": "firsthand lived or operational experience"
+    },
+    {
+      "feature": "EXP_CAV_001",
+      "what_it_measures": "Whether the post states limits or cases where its advice does not apply.",
+      "value_id": "explicit_caveats_present",
+      "value": "explicit caveats present"
+    }
+  ],
+  "text": "P(AI): 55%\n\nHere is an idea to improve:\n\n1. Close the post by pointing readers to a related article, guide or resource for their next step.\n\nKeeping the rest the same, especially the following aspects:\n\n* Commercial next-step intensity: resource or learn more invitation (how directly the post asks readers to buy, book or contact)\n* Change requested of reader: adopt a recurring operating practice (what you want the reader to do or believe after reading)\n* Primary actor expected to act: cross functional team (who is expected to carry out the advice)\n* Dominant credibility basis: firsthand lived or operational experience (how the post earns trust: confident tone, expertise, experience, data, proof)\n* Caveat presence: explicit caveats present (whether the post states limits or cases where its advice does not apply)"
+}

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Deslop structure"
+  short_description: "Rewrite a blog post with the Slop API until it reads human"

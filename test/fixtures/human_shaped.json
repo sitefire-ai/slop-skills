@@ -1,0 +1,46 @@
+{
+  "token": "tok-human_shaped",
+  "result_url": "https://sitefire.ai/api/slop/v1/check/tok-human_shaped",
+  "bundle_version": "1.0.0",
+  "cached": false,
+  "p_ai": 0.001354420696718231,
+  "band": "human_shaped",
+  "word_count": 369,
+  "truncated": false,
+  "language": "en",
+  "warnings": [],
+  "paths": [],
+  "keep": [
+    {
+      "feature": "STR_STG_008",
+      "what_it_measures": "How the post ends: summary, action plan, sales ask, or no conclusion.",
+      "value_id": "related_content_or_resource_route",
+      "value": "related content or resource route"
+    },
+    {
+      "feature": "VOC_CRD_001",
+      "what_it_measures": "How the post earns trust: confident tone, expertise, experience, data, proof.",
+      "value_id": "firsthand_lived_or_operational_experience",
+      "value": "firsthand lived or operational experience"
+    },
+    {
+      "feature": "AUD_RDR_006",
+      "what_it_measures": "Whether the opening describes the reader's situation before giving advice.",
+      "value_id": "present",
+      "value": "yes"
+    },
+    {
+      "feature": "ACT_LVL_038",
+      "what_it_measures": "How directly the post asks readers to buy, book or contact.",
+      "value_id": "resource_or_learn_more_invitation",
+      "value": "resource or learn more invitation"
+    },
+    {
+      "feature": "PUR_JOB_004",
+      "what_it_measures": "What you want the reader to do or believe after reading.",
+      "value_id": "adopt a recurring operating practice",
+      "value": "adopt a recurring operating practice"
+    }
+  ],
+  "text": "P(AI): 0%\n\nThis post already reads as human-written to the detector. No changes are needed.\n\nIts strongest human-like aspects:\n\n* Conclusion behavior: related content or resource route (how the post ends: summary, action plan, sales ask, or no conclusion)\n* Dominant credibility basis: firsthand lived or operational experience (how the post earns trust: confident tone, expertise, experience, data, proof)\n* Reader situation mirroring: yes (whether the opening describes the reader's situation before giving advice)\n* Commercial next-step intensity: resource or learn more invitation (how directly the post asks readers to buy, book or contact)\n* Change requested of reader: adopt a recurring operating practice (what you want the reader to do or believe after reading)"
+}

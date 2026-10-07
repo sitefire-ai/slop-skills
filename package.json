@@ -1,0 +1,11 @@
+{
+  "name": "slop-skills",
+  "private": true,
+  "type": "module",
+  "description": "Agent skills that rewrite a blog post with the Sitefire Slop API until it reads human-shaped.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
