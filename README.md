@@ -1,5 +1,7 @@
 # Slop Skills
 
+[![skills.sh](https://skills.sh/b/sitefire-ai/slop-skills)](https://skills.sh/sitefire-ai/slop-skills)
+
 Agent skills that check a blog post with the [Sitefire Slop API](https://sitefire.ai) and rewrite its structure until the detector reads it as human-written. The terms are in [CONTEXT.md](CONTEXT.md).
 
 ## deslop-structure
@@ -21,6 +23,8 @@ Word-level rewriting does not help here. In the SlopShape study, a rewrite that 
 ```bash
 npx skills add sitefire-ai/slop-skills
 ```
+
+The skill is listed on [skills.sh](https://skills.sh/sitefire-ai/slop-skills). The skill also has a web version: the [Structural Deslopper](https://sitefire.ai/deslop) checks one post and gives you a prompt for your own LLM.
 
 The skill works in Claude Code, Codex and other tools that read Agent Skills. It needs Node 18 or later. It has no packages to install.
 
