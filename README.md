@@ -46,8 +46,7 @@ We do not know yet if a post that the detector calls human also reads as less AI
 
 - **Blog posts only.** The detector learned on blog posts. The skill shows a warning when your text does not look like one.
 - **English.** The study measured English posts. For other languages, the API scores the post, but the result is only indicative.
-- **The first 2,600 words.** The API scores only the first 2,600 words of a post. The skill rewrites the whole post, so the end of a long post is not measured.
-- **300 words to 20,000 characters.** The API refuses shorter or longer texts. The skill counts characters without link targets and images, and tells you before it calls the API. For a URL, it then uses the API's own Check of the page.
+- **300 to 10,000 words.** Posts from 300 to 10,000 words. We read the whole post. The API refuses a shorter or longer post with an error. The skill counts the words as the API counts them: without the title line, link targets and images. It tells you before it calls the API, and the run stops. For a URL, the run also stops when your saved copy of the page is too long.
 - **30 Checks per day.** The API allows 30 computed Checks per IP address per UTC day. Each round uses one Check. When the API refuses a Check, the skill stops, tells you when to try again, and keeps the run folder.
 - **Newer AI models.** The detector learned on posts from five AI models that wrote from briefs. In a test in October 2026 on bundle 1.1.0, posts from six newer models, written from a plain request, scored human-shaped in 10 of 117 cases. So a human-shaped result is not proof that a person wrote the post.
 - **No fact checks.** The API does not check facts or names. Fill every placeholder and make sure that every named person is real before you publish.

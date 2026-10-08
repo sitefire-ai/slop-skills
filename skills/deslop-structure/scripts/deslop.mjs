@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url'
 const DEFAULT_GOAL = 0.2
 const API_DEFAULT_TARGET = 0.3
 const DEFAULT_MAX_ROUNDS = 3
-// The API refuses a text over this many characters (`paste_too_long`).
-const MAX_CHARS = 20000
+// The API refuses a post over this many words (`post_too_long`).
+const MAX_WORDS = 10000
 
 // ---------------------------------------------------------------- run folder
 
@@ -294,22 +294,117 @@ function pendingVersion(run) {
   throw new Error('No version is waiting for a Check.')
 }
 
-/** The text as the API scores it: link targets and images carry no words, and the API drops them anyway. */
+/** The text the skill sends: link targets and images carry no words, and the API drops them anyway. */
 const forApi = (text) => text.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
 
-/** A version over the API's limit: no call. A URL run keeps the API's own Check; any other version stops the run. */
-function tooLong(runDir, run, n, chars) {
-  const size = `${chars.toLocaleString('en')} characters`
-  if (run.recheck_original) {
-    delete run.recheck_original
-    run.notes = [...(run.notes ?? []), `Your copy of the post has ${size}, more than the API's limit of 20,000 characters. The run uses the API's own Check of the URL.`]
-    return logDecision(runDir, run, decide(runDir, run))
+// ---------------------------------------------------------------- the word count, as the API counts it
+// Ported from sitefire-website: `dropTitleLine` from lib/slop/api/prepare.ts, and `markdownToText`
+// with its helper `inline` from lib/slop/provider/extract.ts. Keep the regexes identical to the
+// website source, so that the skill and the API count the same words.
+
+/** The longest first line that can still be a title without a heading mark. */
+const TITLE_MAX_WORDS = 20
+const HEADING = /^\s{0,3}#{1,6}\s/
+// A sentence ends in one of these, before any closing quote or bracket.
+const SENTENCE_END = /[.!?:…]["'”’)\]]*$/
+
+/** Drops the first line when it is a markdown heading, or short, not a sentence, and more text follows. */
+export function dropTitleLine(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const first = lines.findIndex((line) => line.trim() !== '')
+  if (first === -1) return text
+  const head = lines[first].trim()
+  const more = lines.slice(first + 1).some((line) => line.trim() !== '')
+  const title =
+    HEADING.test(head) ||
+    (more && head.split(/\s+/).length <= TITLE_MAX_WORDS && !SENTENCE_END.test(head))
+  if (title) lines.splice(first, 1)
+  return lines.join('\n')
+}
+
+/** Markdown to prose: markers go, link text stays without its target, images go, code fences keep their lines. */
+export function markdownToText(markdown) {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  const out = []
+  let inFence = false
+
+  for (const raw of lines) {
+    let line = raw
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) {
+      out.push(line.trim())
+      continue
+    }
+    // A horizontal rule or a setext underline carries no words.
+    if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line) || /^\s*=+\s*$/.test(line)) {
+      out.push('')
+      continue
+    }
+    // Link and footnote definitions hold targets, not prose.
+    if (/^\s*\[[^\]]+\]:\s*\S/.test(line)) continue
+    if (/^\s{0,3}#{1,6}\s+/.test(line)) {
+      line = line.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\s+#+\s*$/, '')
+    }
+    line = line.replace(/^\s*>\s?/, '')
+    line = line.replace(/^\s*(?:[-*+]|\d{1,3}[.)])\s+/, '')
+    // A task list box after the list marker.
+    line = line.replace(/^\s*\[[ xX]\]\s+/, '')
+    // A table row: the cells are the words, the pipes and the rule are not.
+    if (/^\s*\|/.test(line)) {
+      if (/^\s*\|[\s:|-]+\|?\s*$/.test(line)) continue
+      line = line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').join(' ')
+    }
+    out.push(line)
   }
+
+  // Inline syntax is stripped over the whole text, because emphasis and a link can wrap across a line break.
+  return inline(out.join('\n'))
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function inline(value) {
+  let text = value
+  // Images first, so their alt text does not survive as a link.
+  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  text = text.replace(/!\[[^\]]*\]\[[^\]]*\]/g, '')
+  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+  text = text.replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
+  text = text.replace(/<https?:\/\/[^>]+>/g, '')
+  // Any HTML that came through the markdown.
+  text = text.replace(/<[^>]+>/g, '')
+  text = text.replace(/`([^`]*)`/g, '$1')
+  // Footnote markers point at definitions that were dropped above.
+  text = text.replace(/\[\^[^\]]+\]/g, '')
+  text = text.replace(/(\*\*|__)([\s\S]*?)\1/g, '$2')
+  text = text.replace(/~~([\s\S]*?)~~/g, '$1')
+  text = text.replace(/(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s).,;:!?]|$)/g, '$1$2')
+  text = text.replace(/\\([\\`*_{}[\]()#+\-.!])/g, '$1')
+  return text
+}
+
+/** The words of a post as the API counts them: title line dropped, markdown stripped, split on whitespace. */
+export const postWords = (text) => markdownToText(dropTitleLine(text)).split(/\s+/).filter(Boolean).length
+
+/**
+ * A version over the API's limit: no call, and the run stops. This includes the saved copy of a
+ * URL run: the API's own copy of the page is about as long, so its Check would be refused too.
+ */
+function tooLong(runDir, run, n, words) {
+  const size = `${words.toLocaleString('en')} words`
+  const copy = Boolean(run.recheck_original)
+  delete run.recheck_original
   const round = lastRound(run)
-  if (n > 0 && round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
-  const what = n === 0 ? 'The post' : `The rewrite of round ${n}`
-  return logDecision(runDir, run, { action: 'stop', reason: 'too_long',
-    message: `${what} has ${size} without link targets and images, and the Slop API takes at most 20,000 characters. Shorten it, or check a part of it.` })
+  if (n > 0 && !copy && round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
+  const what = copy ? 'Your copy of the post' : n === 0 ? 'The post' : `The rewrite of round ${n}`
+  return logDecision(runDir, run, { action: 'stop', reason: 'too_long', words,
+    message: `${what} has ${size}. The API reads posts of 300 to 10,000 words. Shorten it, or check a part of it.` })
 }
 
 /** Checks the pending version with the Slop API (SLOP_API_URL, default https://sitefire.ai) and decides the next step. */
@@ -318,7 +413,10 @@ export async function check(runDir, { env = process.env, fetchImpl = fetch, now 
   const n = pendingVersion(run)
   const raw = readText(join(runDir, 'versions', `v${n}.md`))
   const text = raw == null ? null : forApi(raw)
-  if (text != null && text.length > MAX_CHARS) return tooLong(runDir, run, n, text.length)
+  if (text != null) {
+    const words = postWords(text)
+    if (words > MAX_WORDS) return tooLong(runDir, run, n, words)
+  }
   const input = text != null ? { text } : { url: run.input.source }
   const base = (env.SLOP_API_URL || 'https://sitefire.ai').replace(/\/+$/, '')
   let response
@@ -353,7 +451,7 @@ const ERROR_CAUSES = {
   url_homepage: 'The URL is a homepage, not a post.',
   url_refused: 'The URL is on sitefire.ai or in a private address range.',
   invalid_target: 'The goal must be more than 0 and less than 1.',
-  paste_too_long: 'The post has more than 20,000 characters.',
+  post_too_long: 'The post has more than 10,000 words. The API reads posts of 300 to 10,000 words.',
   paste_too_short: 'The post has fewer than 300 words.',
   rate_limited: 'The daily limit of 30 Checks per IP address, or the burst guard, refused the Check.',
   budget_exhausted: 'The daily spend budget of the API is used up. It resets at 00:00 UTC.',
@@ -417,7 +515,7 @@ export function recordCheck(runDir, response, { now = new Date() } = {}) {
     delete run.recheck_original
   }
   writeFileSync(join(runDir, 'checks', `v${n}.json`), `${JSON.stringify(body, null, 2)}\n`)
-  run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: feedbackOf(body).target_p_ai, word_count: body.word_count, truncated: body.truncated, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
+  run.versions.push({ n, p_ai: body.p_ai, band: body.band, margin: body.margin ?? null, target_p_ai: feedbackOf(body).target_p_ai, word_count: body.word_count, warnings: body.warnings ?? [], bundle_version: body.bundle_version })
   let reverted = false
   if (round && n === round.n) {
     reverted = isWorse(body, versionOf(run, round.base))
@@ -552,7 +650,6 @@ function banners(run) {
   const seen = new Set()
   for (const v of run.versions) {
     for (const w of v.warnings ?? []) if (!seen.has(w.code)) { seen.add(w.code); list.push(w.message) }
-    if (v.truncated && !seen.has('truncated')) { seen.add('truncated'); list.push('The post is long: the API scored only its first 2,600 words. The rest of the post was not measured.') }
   }
   if (run.error) list.push(run.next?.message ?? `The Slop API answered ${run.error.code}.`)
   return list.length ? `<section class="banners" id="banners">${list.map((t) => `<p class="banner">${esc(t)}</p>`).join('')}</section>` : ''

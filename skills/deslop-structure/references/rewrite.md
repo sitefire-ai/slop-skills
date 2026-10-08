@@ -18,7 +18,7 @@ Rewrite the full post along the chosen Path. Do the rewrite yourself, with this 
 4. Take new content only from the post itself or from confirmed author input. A Move that asks for a new point, an example or a voice gets it from there: a consequence of what the post says, a caveat it makes, or a point moved from the body. If a Move needs content that neither source has, carry out the part that needs no new facts.
 
    Example, for "End on a new point the post has not made yet": the original ends with a summary, and its body says in passing that some meetings still need to happen live. Move that point to the end and make it the last word. Do not write a new lesson, for example "the hardest part was not the tools". That sentence is a new claim, and the fidelity check fails it.
-5. Keep the post under 20,000 characters, not counting link targets and images. The API checks no longer text.
+5. Keep the post from 300 to 10,000 words. The API reads the whole post and refuses a longer one. The title line, link targets and images do not count.
 6. Keep the language, the voice and the markdown format of the post. Keep the title line, unless a Move changes it.
 7. Write the full post to `write_to`. Write only the post: no notes, no comments, no summary of the changes.
 
