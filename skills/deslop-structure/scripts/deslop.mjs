@@ -392,17 +392,17 @@ function inline(value) {
 /** The words of a post as the API counts them: title line dropped, markdown stripped, split on whitespace. */
 export const postWords = (text) => markdownToText(dropTitleLine(text)).split(/\s+/).filter(Boolean).length
 
-/** A version over the API's limit: no call. A URL run keeps the API's own Check; any other version stops the run. */
+/**
+ * A version over the API's limit: no call, and the run stops. This includes the saved copy of a
+ * URL run: the API's own copy of the page is about as long, so its Check would be refused too.
+ */
 function tooLong(runDir, run, n, words) {
   const size = `${words.toLocaleString('en')} words`
-  if (run.recheck_original) {
-    delete run.recheck_original
-    run.notes = [...(run.notes ?? []), `Your copy of the post has ${size}. The API reads posts of 300 to 10,000 words. The run uses the API's own Check of the URL.`]
-    return logDecision(runDir, run, decide(runDir, run))
-  }
+  const copy = Boolean(run.recheck_original)
+  delete run.recheck_original
   const round = lastRound(run)
-  if (n > 0 && round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
-  const what = n === 0 ? 'The post' : `The rewrite of round ${n}`
+  if (n > 0 && !copy && round?.stage === 'checking') Object.assign(round, { stage: 'done', outcome: 'not_checked' })
+  const what = copy ? 'Your copy of the post' : n === 0 ? 'The post' : `The rewrite of round ${n}`
   return logDecision(runDir, run, { action: 'stop', reason: 'too_long', words,
     message: `${what} has ${size}. The API reads posts of 300 to 10,000 words. Shorten it, or check a part of it.` })
 }

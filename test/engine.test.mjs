@@ -485,7 +485,7 @@ test('link targets and images carry no words; link text counts', async () => {
   assert.equal((await checkFile(`${longPost(9970)}\n${Array(20).fill(link).join(' ')}\n`)).calls.length, 0)
 })
 
-test('a URL run whose own copy is over the limit keeps the API\'s Check of the URL', async () => {
+test('a URL run whose own copy is over the limit stops at once, with no API call', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
   const { runDir } = init({ input: 'https://example.com/blog/long-post', runsDir: dir })
   recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
@@ -494,7 +494,9 @@ test('a URL run whose own copy is over the limit keeps the API\'s Check of the U
   const { calls, fetchImpl } = fakeFetch(golden('borderline'))
   const { decision } = await check(runDir, { fetchImpl, env: {} })
   assert.equal(calls.length, 0)
-  assert.equal(decision.action, 'confirm_path')
-  assert.doesNotThrow(() => startRound(runDir, { path: decision.recommended.path }))
-  assert.match(textOf(report(runDir), 'banners'), /Your copy of the post has 10,500 words\. The API reads posts of 300 to 10,000 words\./)
+  assert.equal(decision.action, 'stop')
+  assert.equal(decision.reason, 'too_long')
+  assert.equal(decision.words, 10500)
+  assert.equal(decision.message, 'Your copy of the post has 10,500 words. The API reads posts of 300 to 10,000 words. Shorten it, or check a part of it.')
+  assert.equal(runLog(runDir).recheck_original, undefined)
 })
