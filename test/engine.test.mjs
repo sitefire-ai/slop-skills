@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
-import { check, extendRounds, init, markConflict, recordCheck, recordFidelity, setOriginal, startRound } from '../skills/deslop-structure/scripts/deslop.mjs'
+import { check, dropTitleLine, extendRounds, init, markConflict, markdownToText, postWords, recordCheck, recordFidelity, setOriginal, startRound } from '../skills/deslop-structure/scripts/deslop.mjs'
 
 const FIXTURES = new URL('./fixtures/', import.meta.url)
 const golden = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8'))
@@ -125,7 +125,7 @@ function failure(status, code, retryAfter = null) {
   return { status, body: { error: { code, stage: 'admission', request_id: 'req-1', retryable: retryAfter != null, retry_after: retryAfter, copy_key: `marketing.slopChecker.errors.${code}` } } }
 }
 
-for (const [status, code, retryAfter] of [[429, 'rate_limited', 3600], [503, 'budget_exhausted', 7200], [422, 'fetch_short', null]]) {
+for (const [status, code, retryAfter] of [[429, 'rate_limited', 3600], [503, 'budget_exhausted', 7200], [422, 'fetch_short', null], [422, 'post_too_long', null]]) {
   test(`${code}: the run stops with the API's message and retry_after, and keeps its folder`, () => {
     const { runDir } = newRun()
     const { decision } = recordCheck(runDir, failure(status, code, retryAfter))
@@ -223,10 +223,17 @@ test('report: a banner when the post is not in English', () => {
   assert.match(textOf(report(runDir), 'banners'), /Scores on other languages are indicative/)
 })
 
-test('report: a banner when only the first 2,600 words were scored', () => {
+test('report: the run log records no truncated field, and the report shows no 2,600-word banner', () => {
   const { runDir } = newRun()
   recordCheck(runDir, ok({ ...golden('ai_shaped'), truncated: true, word_count: 3400 }))
-  assert.match(textOf(report(runDir), 'banners'), /first 2,600 words/)
+  assert.equal('truncated' in runLog(runDir).versions[0], false)
+  assert.doesNotMatch(report(runDir), /2,600 words/)
+})
+
+test('post_too_long: the stop message says the limit in words', () => {
+  const { runDir } = newRun()
+  const { decision } = recordCheck(runDir, failure(422, 'post_too_long'))
+  assert.match(decision.message, /post_too_long: The post has more than 10,000 words/)
 })
 
 // ---------------------------------------------------------------- outputs, constraints and the API call
@@ -403,7 +410,33 @@ test('P(AI) unchanged: the round is kept, whatever the margin does', () => {
   assert.equal(run.rounds[0].outcome, 'kept')
 })
 
-// ---------------------------------------------------------------- the API's 20,000-character limit
+// ---------------------------------------------------------------- the word count and the API's 10,000-word limit
+
+const MARKDOWN = [
+  '# The title line is not counted',
+  '',
+  'A post with a [link to a page](https://example.com/a/very/long/path) and an ![image](https://example.com/i.png).',
+  '',
+  '- **Bold** item',
+  '- `code` item',
+  '',
+  '| Cell one | Cell two |',
+  '|---|---|',
+  '| a | b |',
+  '',
+  '[ref]: https://example.com/reference',
+].join('\n')
+
+test('word count: markdown, links and the title line count as the API counts them', () => {
+  assert.equal(markdownToText(dropTitleLine(MARKDOWN)), 'A post with a link to a page and an .\n\nBold item\ncode item\n\nCell one Cell two\na b')
+  assert.equal(postWords(MARKDOWN), 21)
+})
+
+test('word count: a short first line without a heading mark is a title, a first sentence is not', () => {
+  assert.equal(postWords('A short title\n\nBody text here.'), 3)
+  assert.equal(postWords('This first line is a sentence.\n\nBody.'), 7)
+  assert.equal(postWords('Only one line here'), 4)
+})
 
 /** A fetch that records each call and answers with the given Check. */
 function fakeFetch(body) {
@@ -415,42 +448,53 @@ function fakeFetch(body) {
   return { calls, fetchImpl }
 }
 
-const longPost = (chars) => `# A long post\n\n${'word '.repeat(Math.ceil(chars / 5))}`.slice(0, chars)
+const longPost = (words) => `# A long post\n\n${'word '.repeat(words).trim()}\n`
 
-test('a post over 20,000 characters stops before any API call, with a plain message', async () => {
+async function checkFile(content) {
   const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
-  writeFileSync(join(dir, 'long.md'), longPost(21000))
-  const { runDir } = init({ input: join(dir, 'long.md'), runsDir: join(dir, 'runs') })
+  writeFileSync(join(dir, 'post.md'), content)
+  const { runDir } = init({ input: join(dir, 'post.md'), runsDir: join(dir, 'runs') })
   const { calls, fetchImpl } = fakeFetch(golden('ai_shaped'))
   const { decision } = await check(runDir, { fetchImpl, env: {} })
+  return { runDir, calls, decision }
+}
+
+test('a post over 10,000 words stops before any API call, with a plain message in words', async () => {
+  const { runDir, calls, decision } = await checkFile(longPost(12345))
   assert.equal(calls.length, 0)
   assert.equal(decision.action, 'stop')
   assert.equal(decision.reason, 'too_long')
-  assert.match(decision.message, /20,000 characters/)
+  assert.equal(decision.words, 12345)
+  assert.equal(decision.message, 'The post has 12,345 words. The API reads posts of 300 to 10,000 words. Shorten it, or check a part of it.')
+  assert.equal(runLog(runDir).next.words, 12345)
 })
 
-test('link targets and images are left out before the length check, as the API leaves them out anyway', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
+test('a post of exactly 10,000 words goes to the API; one more word is refused', async () => {
+  assert.equal((await checkFile(longPost(10000))).calls.length, 1)
+  assert.equal((await checkFile(longPost(10001))).calls.length, 0)
+})
+
+test('link targets and images carry no words; link text counts', async () => {
   const link = `[a source](https://example.com/${'x'.repeat(200)})`
-  writeFileSync(join(dir, 'post.md'), `${longPost(18000)}\n\n${Array(20).fill(link).join(' ')}\n\n![chart](https://example.com/chart.png)\n`)
-  const { runDir } = init({ input: join(dir, 'post.md'), runsDir: join(dir, 'runs') })
-  const { calls, fetchImpl } = fakeFetch(golden('ai_shaped'))
-  await check(runDir, { fetchImpl, env: {} })
+  const content = `${longPost(9950)}\n${Array(20).fill(link).join(' ')}\n\n![chart](https://example.com/chart.png)\n`
+  assert.equal(postWords(content), 9990)
+  const { calls } = await checkFile(content)
   assert.equal(calls.length, 1)
   assert.match(calls[0].text, /a source a source/)
   assert.doesNotMatch(calls[0].text, /example\.com/)
+  assert.equal((await checkFile(`${longPost(9970)}\n${Array(20).fill(link).join(' ')}\n`)).calls.length, 0)
 })
 
 test('a URL run whose own copy is over the limit keeps the API\'s Check of the URL', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'deslop-test-'))
   const { runDir } = init({ input: 'https://example.com/blog/long-post', runsDir: dir })
   recordCheck(runDir, ok(sf323(golden('ai_shaped'), { margin: 12.48 })))
-  writeFileSync(join(dir, 'copy.md'), longPost(21000))
+  writeFileSync(join(dir, 'copy.md'), longPost(10500))
   setOriginal(runDir, { file: join(dir, 'copy.md') })
   const { calls, fetchImpl } = fakeFetch(golden('borderline'))
   const { decision } = await check(runDir, { fetchImpl, env: {} })
   assert.equal(calls.length, 0)
   assert.equal(decision.action, 'confirm_path')
   assert.doesNotThrow(() => startRound(runDir, { path: decision.recommended.path }))
-  assert.match(textOf(report(runDir), 'banners'), /20,000 characters/)
+  assert.match(textOf(report(runDir), 'banners'), /Your copy of the post has 10,500 words\. The API reads posts of 300 to 10,000 words\./)
 })
