@@ -1,6 +1,6 @@
 # Slop Skills
 
-[![skills.sh](https://skills.sh/b/sitefire-ai/slop-skills)](https://skills.sh/sitefire-ai/slop-skills)
+[![skills.sh: deslop-structure](https://img.shields.io/badge/skills.sh-deslop--structure-000000)](https://skills.sh/sitefire-ai/slop-skills)
 
 Agent skills that check a blog post with the [Sitefire Slop API](https://sitefire.ai) and rewrite its structure until the detector reads it as human-written. The terms are in [CONTEXT.md](CONTEXT.md).
 
